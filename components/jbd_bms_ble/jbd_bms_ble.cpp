@@ -1,108 +1,94 @@
-#include "heltec_balancer_ble.h"
+#include "jbd_bms_ble.h"
 #include "esphome/core/log.h"
+#include "esphome/core/helpers.h"
 
 #ifdef USE_ESP32
 
 namespace esphome {
-namespace heltec_balancer_ble {
+namespace jbd_bms_ble {
 
-static const char *const TAG = "heltec_balancer_ble";
+static const char *const TAG = "jbd_bms_ble";
 
 static constexpr uint8_t MAX_NO_RESPONSE_COUNT = 10;
-static constexpr uint16_t HELTEC_BALANCER_SERVICE_UUID = 0xFFE0;
-static constexpr uint16_t HELTEC_BALANCER_CHARACTERISTIC_UUID = 0xFFE1;
 
-static constexpr uint8_t SOF_REQUEST_BYTE1 = 0xAA;
-static constexpr uint8_t SOF_REQUEST_BYTE2 = 0x55;
-static constexpr uint8_t SOF_RESPONSE_BYTE1 = 0x55;
-static constexpr uint8_t SOF_RESPONSE_BYTE2 = 0xAA;
-static constexpr uint8_t DEVICE_ADDRESS = 0x11;
+static constexpr uint16_t JBD_BMS_SERVICE_UUID = 0xFF00;
+static constexpr uint16_t JBD_BMS_NOTIFY_CHARACTERISTIC_UUID = 0xFF01;
+static constexpr uint16_t JBD_BMS_CONTROL_CHARACTERISTIC_UUID = 0xFF02;
 
-static constexpr uint8_t FUNCTION_WRITE = 0x00;
-static constexpr uint8_t FUNCTION_READ = 0x01;
+static constexpr uint16_t MAX_RESPONSE_SIZE = 41;
 
-static constexpr uint8_t COMMAND_NONE = 0x00;
-static constexpr uint8_t COMMAND_DEVICE_INFO = 0x01;
-static constexpr uint8_t COMMAND_CELL_INFO = 0x02;
-static constexpr uint8_t COMMAND_FACTORY_DEFAULTS = 0x03;
-static constexpr uint8_t COMMAND_SETTINGS = 0x04;
-static constexpr uint8_t COMMAND_WRITE_REGISTER = 0x05;
+static constexpr uint8_t JBD_PKT_START = 0xDD;
+static constexpr uint8_t JBD_PKT_END = 0x77;
+static constexpr uint8_t JBD_CMD_READ = 0xA5;
+static constexpr uint8_t JBD_CMD_WRITE = 0x5A;
 
-static constexpr uint8_t END_OF_FRAME = 0xFF;
+static constexpr uint8_t JBD_AUTH_PKT_START = 0xFF;
+static constexpr uint8_t JBD_AUTH_PKT_SECOND = 0xAA;
+static constexpr uint8_t JBD_AUTH_PKT_END = 0x77;
 
-static constexpr uint16_t MIN_RESPONSE_SIZE = 20;
-static constexpr uint16_t MAX_RESPONSE_SIZE = 300;
+static constexpr uint8_t JBD_AUTH_SEND_APP_KEY = 0x15;
+static constexpr uint8_t JBD_AUTH_GET_RANDOM = 0x17;
+static constexpr uint8_t JBD_AUTH_SEND_PASSWORD = 0x18;
+static constexpr uint8_t JBD_AUTH_CHANGE_PASSWORD = 0x16;
+static constexpr uint8_t JBD_AUTH_SEND_ROOT_PASSWORD = 0x1D;
 
-static constexpr uint8_t OPERATION_STATUS_SIZE = 13;
-static constexpr uint8_t BUZZER_MODES_SIZE = 4;
-static constexpr uint8_t BATTERY_TYPES_SIZE = 5;
-static constexpr uint8_t CELL_ERRORS_SIZE = 8;
+static constexpr uint8_t JBD_CMD_HWINFO = 0x03;
+static constexpr uint8_t JBD_CMD_CELLINFO = 0x04;
+static constexpr uint8_t JBD_CMD_HWVER = 0x05;
+
+static constexpr uint8_t JBD_CMD_ENTER_FACTORY = 0x00;
+static constexpr uint8_t JBD_CMD_EXIT_FACTORY = 0x01;
+static constexpr uint8_t JBD_CMD_FORCE_SOC_RESET = 0x0A;
+static constexpr uint8_t JBD_CMD_ERROR_COUNTS = 0xAA;
+static constexpr uint8_t JBD_CMD_CAP_REM = 0xE0;
+static constexpr uint8_t JBD_CMD_MOS = 0xE1;
+static constexpr uint8_t JBD_CMD_BALANCER = 0xE2;
+
+static constexpr uint8_t JBD_MOS_CHARGE = 0x01;
+static constexpr uint8_t JBD_MOS_DISCHARGE = 0x02;
+
+static constexpr uint8_t ERRORS_SIZE = 16;
+static constexpr uint8_t OPERATION_STATUS_SIZE = 8;
 
 // Simple string arrays - no PROGMEM
+static const char *const ERRORS[] = {
+    "Cell overvoltage",
+    "Cell undervoltage",
+    "Pack overvoltage",
+    "Pack undervoltage",
+    "Charging over temperature",
+    "Charging under temperature",
+    "Discharging over temperature",
+    "Discharging under temperature",
+    "Charging overcurrent",
+    "Discharging overcurrent",
+    "Short circuit",
+    "IC front-end error",
+    "Mosfet Software Lock",
+    "Charge timeout Close",
+    "Unknown (0x0E)",
+    "Unknown (0x0F)"
+};
+
 static const char *const OPERATION_STATUS[] = {
-    "Unknown",
-    "Wrong cell count",
-    "AcqLine Res test",
-    "AcqLine Res exceed",
-    "Systest Completed",
-    "Balancing",
-    "Balancing finished",
-    "Low voltage",
-    "System Overtemp",
-    "Host fails",
-    "Low battery voltage - balancing stopped",
-    "Temperature too high - balancing stopped",
-    "Self-test completed"
+    "Charging",
+    "Discharging",
+    "Unknown (0x04)",
+    "Unknown (0x08)",
+    "Unknown (0x10)",
+    "Unknown (0x20)",
+    "Unknown (0x40)",
+    "Unknown (0x80)"
 };
 
-static const char *const BUZZER_MODES[] = {
-    "Unknown",
-    "Off",
-    "Beep once",
-    "Beep regular"
+static const uint8_t ROOT_PASSWORD[] = {
+    0x4a, 0x42, 0x44, 0x62, 0x74, 0x70, 0x77, 0x64,
+    0x21, 0x40, 0x23, 0x32, 0x30, 0x32, 0x33
 };
+static constexpr size_t ROOT_PASSWORD_LENGTH = 15;
 
-static const char *const BATTERY_TYPES[] = {
-    "Unknown",
-    "NCM",
-    "LFP",
-    "LTO",
-    "PbAc"
-};
-
-static const char *const CELL_ERRORS[] = {
-    "Battery detection failed",
-    "Overvoltage",
-    "Undervoltage",
-    "Polarity error",
-    "Excessive line resistance",
-    "System overheating",
-    "Charging fault",
-    "Discharge fault"
-};
-
-uint8_t crc(const uint8_t data[], const uint16_t len) {
-  uint8_t crc = 0;
-  for (uint16_t i = 0; i < len; i++) {
-    crc = crc + data[i];
-  }
-  return crc;
-}
-
-void HeltecBalancerBle::dump_config() {
-  ESP_LOGCONFIG(TAG, "HeltecBalancerBle");
-  LOG_BINARY_SENSOR("", "Balancing", this->balancing_binary_sensor_);
-  LOG_BINARY_SENSOR("", "Online Status", this->online_status_binary_sensor_);
-  LOG_SENSOR("", "Minimum Cell Voltage", this->min_cell_voltage_sensor_);
-  LOG_SENSOR("", "Maximum Cell Voltage", this->max_cell_voltage_sensor_);
-  LOG_SENSOR("", "Delta Cell Voltage", this->delta_cell_voltage_sensor_);
-  LOG_SENSOR("", "Average Cell Voltage", this->average_cell_voltage_sensor_);
-  LOG_SENSOR("", "Total Voltage", this->total_voltage_sensor_);
-  LOG_TEXT_SENSOR("", "Operation Status", this->operation_status_text_sensor_);
-}
-
-void HeltecBalancerBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
-                                            esp_ble_gattc_cb_param_t *param) {
+void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
+                                    esp_ble_gattc_cb_param_t *param) {
   switch (event) {
     case ESP_GATTC_OPEN_EVT: {
       break;
@@ -111,65 +97,77 @@ void HeltecBalancerBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt
       ESP_LOGI(TAG, "Disconnect event - cleaning up");
       
       // CRITICAL: Save handle before clearing state
-      uint16_t handle_to_unregister = this->char_handle_;
+      uint16_t notify_handle = this->char_notify_handle_;
       
       // CRITICAL: Unregister notifications BEFORE clearing state
-      if (handle_to_unregister != 0) {
+      if (notify_handle != 0) {
         auto status = esp_ble_gattc_unregister_for_notify(this->parent()->get_gattc_if(),
-                                                          this->parent()->get_remote_bda(), handle_to_unregister);
+                                                          this->parent()->get_remote_bda(), notify_handle);
         if (status) {
           ESP_LOGW(TAG, "esp_ble_gattc_unregister_for_notify failed, status=%d", status);
         }
       }
       
-      // CRITICAL: Set state first to prevent race conditions
+      // CRITICAL: Set state BEFORE clearing handles
       this->node_state = espbt::ClientState::IDLE;
-      this->status_notification_received_ = false;
-      this->char_handle_ = 0;
-      
-      // CRITICAL: Clear buffer LAST to avoid accessing during notifications
+      this->char_notify_handle_ = 0;
+      this->char_command_handle_ = 0;
+      this->authentication_state_ = AuthState::NOT_AUTHENTICATED;
+      this->random_byte_ = 0;
+
+      // CRITICAL: Clear buffer LAST
       this->frame_buffer_.clear();
       this->frame_buffer_.shrink_to_fit();
 
       break;
     }
     case ESP_GATTC_SEARCH_CMPL_EVT: {
-      auto *chr = this->parent_->get_characteristic(HELTEC_BALANCER_SERVICE_UUID, HELTEC_BALANCER_CHARACTERISTIC_UUID);
-      if (chr == nullptr) {
-        ESP_LOGE(TAG, "[%s] No control service found at device, not an Heltec/NEEY balancer..?",
+      auto *char_notify = this->parent_->get_characteristic(JBD_BMS_SERVICE_UUID, JBD_BMS_NOTIFY_CHARACTERISTIC_UUID);
+      if (char_notify == nullptr) {
+        ESP_LOGE(TAG, "[%s] No notify service found at device, not an JBD BMS..?",
                  this->parent_->address_str().c_str());
         break;
       }
-
-      this->char_handle_ = chr->handle;
-      
-      // Pre-allocate buffer to avoid reallocations during operation
-      this->frame_buffer_.clear();
-      this->frame_buffer_.reserve(MAX_RESPONSE_SIZE);
+      this->char_notify_handle_ = char_notify->handle;
 
       auto status = esp_ble_gattc_register_for_notify(this->parent()->get_gattc_if(), this->parent()->get_remote_bda(),
-                                                      chr->handle);
+                                                      char_notify->handle);
       if (status) {
         ESP_LOGW(TAG, "esp_ble_gattc_register_for_notify failed, status=%d", status);
       }
+
+      auto *char_command = this->parent_->get_characteristic(JBD_BMS_SERVICE_UUID, JBD_BMS_CONTROL_CHARACTERISTIC_UUID);
+      if (char_command == nullptr) {
+        ESP_LOGE(TAG, "[%s] No control service found at device, not an JBD BMS..?",
+                 this->parent_->address_str().c_str());
+        break;
+      }
+      this->char_command_handle_ = char_command->handle;
+      
+      // Pre-allocate buffer
+      this->frame_buffer_.clear();
+      this->frame_buffer_.reserve(MAX_RESPONSE_SIZE);
+      
       break;
     }
     case ESP_GATTC_REG_FOR_NOTIFY_EVT: {
       this->node_state = espbt::ClientState::ESTABLISHED;
-      this->status_notification_received_ = false;
 
-      ESP_LOGI(TAG, "Request device info");
-      this->send_command(FUNCTION_READ, COMMAND_DEVICE_INFO);
+      if (this->enable_authentication_) {
+        this->start_authentication_();
+      } else {
+        this->send_command(JBD_CMD_READ, JBD_CMD_HWINFO);
+      }
 
       break;
     }
     case ESP_GATTC_NOTIFY_EVT: {
-      // CRITICAL: Check handle is still valid
-      if (this->char_handle_ == 0 || param->notify.handle != this->char_handle_)
+      // CRITICAL: Check handle validity before processing
+      if (this->char_notify_handle_ == 0 || param->notify.handle != this->char_notify_handle_)
         break;
 
-      ESP_LOGVV(TAG, "Notification received: %s",
-                format_hex_pretty(param->notify.value, param->notify.value_len).c_str());
+      ESP_LOGV(TAG, "Notification received (handle 0x%02X): %s", param->notify.handle,
+               format_hex_pretty(param->notify.value, param->notify.value_len).c_str());
 
       this->assemble(param->notify.value, param->notify.value_len);
 
@@ -180,129 +178,334 @@ void HeltecBalancerBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt
   }
 }
 
-void HeltecBalancerBle::update() {
-  this->track_online_status_();
-  if (this->node_state != espbt::ClientState::ESTABLISHED) {
-    ESP_LOGW(TAG, "[%s] Not connected", this->parent_->address_str().c_str());
+void JbdBmsBle::start_authentication_() {
+  ESP_LOGI(TAG, "Starting authentication flow");
+  this->authentication_state_ = AuthState::SENDING_APP_KEY;
+  this->auth_timeout_start_ = millis();
+  this->send_app_key_();
+}
+
+void JbdBmsBle::send_app_key_() {
+  ESP_LOGD(TAG, "Sending app key");
+
+  uint8_t frame[11];
+  frame[0] = JBD_AUTH_PKT_START;
+  frame[1] = JBD_AUTH_PKT_SECOND;
+  frame[2] = JBD_AUTH_SEND_APP_KEY;
+  frame[3] = 0x06;
+  frame[4] = 0x30;
+  frame[5] = 0x30;
+  frame[6] = 0x30;
+  frame[7] = 0x30;
+  frame[8] = 0x30;
+  frame[9] = 0x30;
+  frame[10] = auth_chksum_(frame + 2, 8);
+
+  this->send_auth_frame_(frame, sizeof(frame));
+}
+
+void JbdBmsBle::request_random_byte_() {
+  ESP_LOGD(TAG, "Requesting random byte");
+
+  uint8_t frame[5];
+  frame[0] = JBD_AUTH_PKT_START;
+  frame[1] = JBD_AUTH_PKT_SECOND;
+  frame[2] = JBD_AUTH_GET_RANDOM;
+  frame[3] = 0x00;
+  frame[4] = auth_chksum_(frame + 2, 2);
+
+  this->send_auth_frame_(frame, sizeof(frame));
+}
+
+void JbdBmsBle::send_user_password_() {
+  ESP_LOGD(TAG, "Sending encrypted user password with random byte: 0x%02X", this->random_byte_);
+
+  uint8_t *remote_bda = this->parent()->get_remote_bda();
+  std::string password_str = this->password_.empty() ? "123123" : this->password_;
+
+  uint8_t frame[11];
+  frame[0] = JBD_AUTH_PKT_START;
+  frame[1] = JBD_AUTH_PKT_SECOND;
+  frame[2] = JBD_AUTH_SEND_PASSWORD;
+  frame[3] = 0x06;
+
+  for (int i = 0; i < 6; i++) {
+    frame[4 + i] = ((remote_bda[i] ^ static_cast<uint8_t>(password_str[i])) + this->random_byte_) & 255;
+  }
+
+  frame[10] = auth_chksum_(frame + 2, 8);
+
+  this->send_auth_frame_(frame, sizeof(frame));
+}
+
+void JbdBmsBle::send_root_password_() {
+  ESP_LOGD(TAG, "Sending encrypted root password with random byte: 0x%02X", this->random_byte_);
+
+  uint8_t *remote_bda = this->parent()->get_remote_bda();
+  uint8_t encrypted[ROOT_PASSWORD_LENGTH];
+
+  for (size_t i = 0; i < ROOT_PASSWORD_LENGTH; i++) {
+    uint8_t mac_byte = (i < 6) ? remote_bda[i] : 0x00;
+    uint8_t pwd_byte = ROOT_PASSWORD[i];
+    encrypted[i] = ((mac_byte ^ pwd_byte) + this->random_byte_) & 255;
+  }
+
+  uint8_t frame[20];
+  frame[0] = JBD_AUTH_PKT_START;
+  frame[1] = JBD_AUTH_PKT_SECOND;
+  frame[2] = JBD_AUTH_SEND_ROOT_PASSWORD;
+  frame[3] = ROOT_PASSWORD_LENGTH;
+
+  for (size_t i = 0; i < ROOT_PASSWORD_LENGTH; i++) {
+    frame[4 + i] = encrypted[i];
+  }
+
+  frame[4 + ROOT_PASSWORD_LENGTH] = auth_chksum_(frame + 2, 2 + ROOT_PASSWORD_LENGTH);
+
+  this->send_auth_frame_(frame, 5 + ROOT_PASSWORD_LENGTH);
+}
+
+void JbdBmsBle::send_auth_frame_(uint8_t *frame, size_t length) {
+  if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_command_handle_ == 0) {
+    ESP_LOGW(TAG, "Cannot send auth frame - not connected");
     return;
   }
 
-  if (!this->status_notification_received_) {
-    ESP_LOGI(TAG, "Request status notification");
-    this->send_command(FUNCTION_READ, COMMAND_CELL_INFO);
+  ESP_LOGV(TAG, "Send auth frame (handle 0x%02X): %s", this->char_command_handle_,
+           format_hex_pretty(frame, length).c_str());
+
+  auto status =
+      esp_ble_gattc_write_char(this->parent_->get_gattc_if(), this->parent_->get_conn_id(), this->char_command_handle_,
+                               length, frame, ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
+
+  if (status) {
+    ESP_LOGW(TAG, "[%s] esp_ble_gattc_write_char failed, status=%d", this->parent_->address_str().c_str(), status);
   }
 }
 
-void HeltecBalancerBle::assemble(const uint8_t *data, uint16_t length) {
-  // CRITICAL: Check if still connected to avoid processing stale data
-  if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_handle_ == 0) {
+void JbdBmsBle::assemble(const uint8_t *data, uint16_t length) {
+  // CRITICAL: Check connection state before processing
+  if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_notify_handle_ == 0) {
     ESP_LOGV(TAG, "Ignoring data - not in established state");
     return;
   }
 
   // Safety check for buffer overflow
   if (this->frame_buffer_.size() > MAX_RESPONSE_SIZE) {
-    ESP_LOGW(TAG, "Frame dropped because of invalid length");
+    ESP_LOGW(TAG, "Maximum response size exceeded");
     this->frame_buffer_.clear();
     return;
   }
 
-  // Flush buffer on every preamble
-  if (length >= 2 && data[0] == SOF_RESPONSE_BYTE1 && data[1] == SOF_RESPONSE_BYTE2) {
+  if (length >= 5 && data[0] == JBD_AUTH_PKT_START && data[1] == JBD_AUTH_PKT_SECOND) {
+    uint8_t command = data[2];
+    uint8_t data_len = data[3];
+    uint8_t expected_frame_len = 4 + data_len + 1;
+
+    if (length >= expected_frame_len) {
+      uint8_t computed_crc = auth_chksum_(data + 2, 2 + data_len);
+      uint8_t remote_crc = data[4 + data_len];
+
+      if (computed_crc == remote_crc) {
+        this->handle_auth_response_(command, data + 4, data_len);
+      } else {
+        ESP_LOGW(TAG, "Auth frame checksum failed! 0x%02X != 0x%02X", computed_crc, remote_crc);
+      }
+    }
+    return;
+  }
+
+  bool is_new_frame = false;
+  if (length >= 3 && data[0] == JBD_PKT_START && data[2] == 0x00) {
+    is_new_frame = true;
+  }
+
+  if (is_new_frame) {
     this->frame_buffer_.clear();
   }
 
   this->frame_buffer_.insert(this->frame_buffer_.end(), data, data + length);
 
-  if (this->frame_buffer_.size() >= MIN_RESPONSE_SIZE && this->frame_buffer_.back() == END_OF_FRAME) {
+  if (this->frame_buffer_.size() >= 7 && this->frame_buffer_[0] == JBD_PKT_START &&
+      this->frame_buffer_.back() == JBD_PKT_END) {
     const uint8_t *raw = &this->frame_buffer_[0];
-    const uint16_t frame_size = this->frame_buffer_.size();
+    uint8_t function = raw[1];
+    uint16_t data_len = raw[3];
+    uint16_t frame_len = 4 + data_len + 3;
 
-    uint8_t computed_crc = crc(raw, frame_size - 2);
-    uint8_t remote_crc = raw[frame_size - 2];
-    if (computed_crc != remote_crc) {
-      ESP_LOGW(TAG, "CRC check failed! 0x%02X != 0x%02X", computed_crc, remote_crc);
-      this->frame_buffer_.clear();
-      return;
+    if (frame_len == this->frame_buffer_.size()) {
+      uint16_t computed_crc = chksum_(raw + 2, data_len + 2);
+      uint16_t remote_crc = uint16_t(raw[frame_len - 3]) << 8 | (uint16_t(raw[frame_len - 2]) << 0);
+
+      if (computed_crc == remote_crc) {
+        std::vector<uint8_t> frame_data(this->frame_buffer_.begin() + 4, this->frame_buffer_.end() - 3);
+        this->on_jbd_bms_data(function, frame_data);
+      } else {
+        ESP_LOGW(TAG, "CRC check failed! 0x%04X != 0x%04X", computed_crc, remote_crc);
+      }
+    } else {
+      ESP_LOGW(TAG, "Invalid frame length: expected %d, got %d", frame_len, this->frame_buffer_.size());
     }
-
-    // Pass buffer directly instead of copying
-    std::vector<uint8_t> data(this->frame_buffer_.begin(), this->frame_buffer_.end());
-
-    this->decode_(data);
     this->frame_buffer_.clear();
   }
 }
 
-void HeltecBalancerBle::decode_(const std::vector<uint8_t> &data) {
-  this->reset_online_status_tracker_();
+void JbdBmsBle::handle_auth_response_(uint8_t command, const uint8_t *data, uint8_t data_len) {
+  ESP_LOGV(TAG, "Auth response - Command: 0x%02X, Data len: %d", command, data_len);
 
-  uint8_t frame_type = data[4];
-  switch (frame_type) {
-    case COMMAND_DEVICE_INFO:
-      this->decode_device_info_(data);
+  switch (command) {
+    case JBD_AUTH_SEND_APP_KEY:
+      switch (data[0]) {
+        case 0x00:
+          ESP_LOGD(TAG, "App key accepted, password required - requesting random byte");
+          this->authentication_state_ = AuthState::REQUESTING_RANDOM;
+          this->request_random_byte_();
+          break;
+        case 0x02:
+          ESP_LOGI(TAG, "App key accepted, no password required - authentication complete");
+          this->authentication_state_ = AuthState::AUTHENTICATED;
+          this->send_command(JBD_CMD_READ, JBD_CMD_HWINFO);
+          break;
+        case 0x01:
+          ESP_LOGE(TAG, "App key rejected");
+          this->authentication_state_ = AuthState::NOT_AUTHENTICATED;
+          break;
+        default:
+          ESP_LOGW(TAG, "Unknown app key response: 0x%02X", data[0]);
+          this->authentication_state_ = AuthState::NOT_AUTHENTICATED;
+          break;
+      }
       break;
-    case COMMAND_CELL_INFO:
-      this->decode_cell_info_(data);
+
+    case JBD_AUTH_GET_RANDOM:
+      this->random_byte_ = data[0];
+      ESP_LOGD(TAG, "Received random byte: 0x%02X", this->random_byte_);
+      if (this->authentication_state_ == AuthState::REQUESTING_RANDOM) {
+        this->authentication_state_ = AuthState::SENDING_PASSWORD;
+        this->send_user_password_();
+      } else if (this->authentication_state_ == AuthState::REQUESTING_ROOT_RANDOM) {
+        this->authentication_state_ = AuthState::SENDING_ROOT_PASSWORD;
+        this->send_root_password_();
+      }
       break;
-    case COMMAND_FACTORY_DEFAULTS:
-      this->decode_factory_defaults_(data);
+
+    case JBD_AUTH_SEND_PASSWORD:
+      if (data[0] == 0x00) {
+        ESP_LOGD(TAG, "Password accepted, requesting new random byte for root password");
+        this->authentication_state_ = AuthState::REQUESTING_ROOT_RANDOM;
+        this->request_random_byte_();
+      } else {
+        ESP_LOGE(TAG, "Password rejected");
+        this->authentication_state_ = AuthState::NOT_AUTHENTICATED;
+      }
       break;
-    case COMMAND_SETTINGS:
-      this->decode_settings_(data);
+
+    case JBD_AUTH_SEND_ROOT_PASSWORD:
+      if (data[0] == 0x00) {
+        ESP_LOGI(TAG, "Authentication successful!");
+        this->authentication_state_ = AuthState::AUTHENTICATED;
+        this->send_command(JBD_CMD_READ, JBD_CMD_HWINFO);
+      } else {
+        ESP_LOGE(TAG, "Root password rejected");
+        this->authentication_state_ = AuthState::NOT_AUTHENTICATED;
+      }
       break;
-    case COMMAND_WRITE_REGISTER:
-      ESP_LOGD(TAG, "Write register response received: %s", format_hex_pretty(data.data(), data.size()).c_str());
-      break;
+
     default:
-      ESP_LOGW(TAG, "Unsupported message type (0x%02X)", data[4]);
+      ESP_LOGW(TAG, "Unknown auth command: 0x%02X", command);
+      break;
   }
 }
 
-void HeltecBalancerBle::decode_cell_info_(const std::vector<uint8_t> &data) {
-  auto heltec_get_16bit = [&](size_t i) -> uint16_t {
-    return (uint16_t(data[i + 1]) << 8) | (uint16_t(data[i + 0]) << 0);
-  };
-  auto heltec_get_24bit = [&](size_t i) -> uint32_t {
-    return (uint32_t(data[i + 2]) << 16) | (uint32_t(data[i + 1]) << 8) | (uint32_t(data[i + 0]) << 0);
-  };
-  auto heltec_get_32bit = [&](size_t i) -> uint32_t {
-    return (uint32_t(heltec_get_16bit(i + 2)) << 16) | (uint32_t(heltec_get_16bit(i + 0)) << 0);
-  };
-
-  const uint32_t now = millis();
-  if (now - this->last_cell_info_ < this->throttle_) {
+void JbdBmsBle::update() {
+  this->track_online_status_();
+  if (this->node_state != espbt::ClientState::ESTABLISHED) {
+    ESP_LOGW(TAG, "[%s] Not connected", this->parent_->address_str().c_str());
     return;
   }
-  this->last_cell_info_ = now;
 
-  ESP_LOGI(TAG, "Cell info frame (%d bytes):", data.size());
-  ESP_LOGD(TAG, "  %s", format_hex_pretty(&data.front(), 150).c_str());
-  ESP_LOGD(TAG, "  %s", format_hex_pretty(&data.front() + 150, data.size() - 150).c_str());
+  if (this->enable_authentication_ && this->authentication_state_ != AuthState::AUTHENTICATED) {
+    if (this->authentication_state_ == AuthState::NOT_AUTHENTICATED) {
+      this->start_authentication_();
+    } else {
+      this->check_auth_timeout_();
+      ESP_LOGV(TAG, "[%s] Not authenticated yet", this->parent_->address_str().c_str());
+    }
+    return;
+  }
 
-  ESP_LOGD(TAG, "  Frame counter: %d", data[8]);
+  this->send_command(JBD_CMD_READ, JBD_CMD_HWINFO);
+}
 
-  // Calculate cell statistics in a single pass - optimized
-  uint8_t cells = 24;
-  uint8_t cells_enabled = 0;
+void JbdBmsBle::check_auth_timeout_() {
+  if (this->authentication_state_ == AuthState::NOT_AUTHENTICATED ||
+      this->authentication_state_ == AuthState::AUTHENTICATED) {
+    return;
+  }
+
+  const uint32_t now = millis();
+  if (now - this->auth_timeout_start_ > this->auth_timeout_ms_) {
+    ESP_LOGW(TAG, "[%s] Authentication timeout after %d ms, resetting to retry", this->parent_->address_str().c_str(),
+             this->auth_timeout_ms_);
+    this->authentication_state_ = AuthState::NOT_AUTHENTICATED;
+  }
+}
+
+void JbdBmsBle::on_jbd_bms_data(const uint8_t &function, const std::vector<uint8_t> &data) {
+  this->reset_online_status_tracker_();
+
+  switch (function) {
+    case JBD_CMD_HWINFO:
+      this->on_hardware_info_data_(data);
+      this->send_command(JBD_CMD_READ, JBD_CMD_CELLINFO);
+      break;
+    case JBD_CMD_CELLINFO:
+      this->on_cell_info_data_(data);
+      break;
+    case JBD_CMD_HWVER:
+      this->on_hardware_version_data_(data);
+      break;
+    case JBD_CMD_ERROR_COUNTS:
+      this->on_error_counts_data_(data);
+      break;
+    case JBD_CMD_MOS:
+    case JBD_CMD_EXIT_FACTORY:
+    case JBD_CMD_FORCE_SOC_RESET:
+      break;
+    default:
+      ESP_LOGW(TAG, "Unhandled response (function 0x%02X) received: %s", function,
+               format_hex_pretty(&data.front(), data.size()).c_str());
+  }
+}
+
+void JbdBmsBle::on_cell_info_data_(const std::vector<uint8_t> &data) {
+  auto jbd_get_16bit = [&](size_t i) -> uint16_t {
+    return (uint16_t(data[i + 0]) << 8) | (uint16_t(data[i + 1]) << 0);
+  };
+
+  ESP_LOGI(TAG, "Cell info frame (%d bytes) received", data.size());
+  ESP_LOGVV(TAG, "  %s", format_hex_pretty(&data.front(), data.size()).c_str());
+
+  uint8_t data_len = data.size();
+  if (data_len < 2 || data_len > 64 || (data_len % 2) != 0) {
+    ESP_LOGW(TAG, "Skipping cell info frame because of invalid length: %d", data_len);
+    return;
+  }
+
+  uint8_t cells = std::min(data_len / 2, 32);
   float min_cell_voltage = 100.0f;
-  float max_cell_voltage = -100.0f;
-  float average_cell_voltage = 0.0f;
+  float max_cell_voltage = 0.0f;
+  float sum_voltage = 0.0f;
   uint8_t min_voltage_cell = 0;
   uint8_t max_voltage_cell = 0;
   
   for (uint8_t i = 0; i < cells; i++) {
-    float cell_voltage = ieee_float_(heltec_get_32bit(i * 4 + 9));
-    float cell_resistance = ieee_float_(heltec_get_32bit(i * 4 + 105));
+    float cell_voltage = (float) jbd_get_16bit(0 + (i * 2)) * 0.001f;
+    sum_voltage += cell_voltage;
     
-    if (cell_voltage > 0) {
-      average_cell_voltage = average_cell_voltage + cell_voltage;
-      cells_enabled++;
-      
-      if (cell_voltage < min_cell_voltage) {
-        min_cell_voltage = cell_voltage;
-        min_voltage_cell = i + 1;
-      }
+    if (cell_voltage < min_cell_voltage) {
+      min_cell_voltage = cell_voltage;
+      min_voltage_cell = i + 1;
     }
     if (cell_voltage > max_cell_voltage) {
       max_cell_voltage = cell_voltage;
@@ -310,187 +513,118 @@ void HeltecBalancerBle::decode_cell_info_(const std::vector<uint8_t> &data) {
     }
     
     this->publish_state_(this->cells_[i].cell_voltage_sensor_, cell_voltage);
-    this->publish_state_(this->cells_[i].cell_resistance_sensor_, cell_resistance);
   }
   
-  if (cells_enabled > 0) {
-    average_cell_voltage = average_cell_voltage / cells_enabled;
-  }
+  float average_cell_voltage = (cells > 0) ? (sum_voltage / cells) : 0.0f;
 
   this->publish_state_(this->min_cell_voltage_sensor_, min_cell_voltage);
   this->publish_state_(this->max_cell_voltage_sensor_, max_cell_voltage);
-  this->publish_state_(this->min_voltage_cell_sensor_, (float) min_voltage_cell);
   this->publish_state_(this->max_voltage_cell_sensor_, (float) max_voltage_cell);
+  this->publish_state_(this->min_voltage_cell_sensor_, (float) min_voltage_cell);
   this->publish_state_(this->delta_cell_voltage_sensor_, max_cell_voltage - min_cell_voltage);
   this->publish_state_(this->average_cell_voltage_sensor_, average_cell_voltage);
-
-  this->publish_state_(this->total_voltage_sensor_, ieee_float_(heltec_get_32bit(201)));
-
-  uint8_t raw_operation_status = data[216];
-  this->publish_state_(this->balancing_binary_sensor_, (raw_operation_status == 0x05));
-  if (raw_operation_status < OPERATION_STATUS_SIZE) {
-    this->publish_state_(this->operation_status_text_sensor_, OPERATION_STATUS[raw_operation_status]);
-  } else {
-    this->publish_state_(this->operation_status_text_sensor_, "Unknown");
-  }
-
-  this->publish_state_(this->balancing_current_sensor_, ieee_float_(heltec_get_32bit(217)));
-  this->publish_state_(this->temperature_sensor_1_sensor_, ieee_float_(heltec_get_32bit(221)));
-  this->publish_state_(this->temperature_sensor_2_sensor_, ieee_float_(heltec_get_32bit(225)));
-  this->publish_state_(this->cell_detection_failed_bitmask_sensor_, heltec_get_24bit(229));
-  this->publish_state_(this->cell_overvoltage_bitmask_sensor_, heltec_get_24bit(232));
-  this->publish_state_(this->cell_undervoltage_bitmask_sensor_, heltec_get_24bit(235));
-  this->publish_state_(this->cell_polarity_error_bitmask_sensor_, heltec_get_24bit(238));
-  this->publish_state_(this->cell_excessive_line_resistance_bitmask_sensor_, heltec_get_24bit(241));
-  this->publish_state_(this->error_system_overheating_binary_sensor_, data[244] != 0x00);
-  this->publish_state_(this->error_charging_binary_sensor_, (bool) data[245]);
-  this->publish_state_(this->error_discharging_binary_sensor_, (bool) data[246]);
-
-  ESP_LOGI(TAG, "  Uptime: %s (%lus)", format_total_runtime_(heltec_get_32bit(254)).c_str(),
-           (unsigned long) heltec_get_32bit(254));
-
-  this->status_notification_received_ = true;
 }
 
-void HeltecBalancerBle::decode_settings_(const std::vector<uint8_t> &data) {
-  auto heltec_get_16bit = [&](size_t i) -> uint16_t {
-    return (uint16_t(data[i + 1]) << 8) | (uint16_t(data[i + 0]) << 0);
+void JbdBmsBle::on_hardware_info_data_(const std::vector<uint8_t> &data) {
+  auto jbd_get_16bit = [&](size_t i) -> uint16_t {
+    return (uint16_t(data[i + 0]) << 8) | (uint16_t(data[i + 1]) << 0);
   };
-  auto heltec_get_32bit = [&](size_t i) -> uint32_t {
-    return (uint32_t(heltec_get_16bit(i + 2)) << 16) | (uint32_t(heltec_get_16bit(i + 0)) << 0);
+  auto jbd_get_32bit = [&](size_t i) -> uint32_t {
+    return (uint32_t(jbd_get_16bit(i + 0)) << 16) | (uint32_t(jbd_get_16bit(i + 2)) << 0);
   };
 
-  ESP_LOGI(TAG, "Settings frame (%d bytes):", data.size());
-  ESP_LOGD(TAG, "  %s", format_hex_pretty(data.data(), data.size()).c_str());
+  ESP_LOGI(TAG, "Hardware info frame (%d bytes) received", data.size());
+  ESP_LOGVV(TAG, "  %s", format_hex_pretty(&data.front(), data.size()).c_str());
 
-  this->publish_state_(this->cell_count_number_, (float) data[8]);
-  this->publish_state_(this->balance_trigger_voltage_number_, ieee_float_(heltec_get_32bit(9)));
-  this->publish_state_(this->max_balance_current_number_, ieee_float_(heltec_get_32bit(13)));
-  this->publish_state_(this->balance_sleep_voltage_number_, ieee_float_(heltec_get_32bit(17)));
+  ESP_LOGD(TAG, "  Device model: %s", this->device_model_.c_str());
 
-  uint8_t raw_balancer_enabled = data[21];
-  this->publish_state_(this->balancer_switch_, (bool) raw_balancer_enabled);
+  float total_voltage = jbd_get_16bit(0) * 0.01f;
+  this->publish_state_(this->total_voltage_sensor_, total_voltage);
 
-  uint8_t raw_buzzer_mode = data[22];
-  if (raw_buzzer_mode < BUZZER_MODES_SIZE) {
-    this->publish_state_(this->buzzer_mode_text_sensor_, BUZZER_MODES[raw_buzzer_mode]);
-  } else {
-    this->publish_state_(this->buzzer_mode_text_sensor_, "Unknown");
+  float current = (float) ((int16_t) jbd_get_16bit(2)) * 0.01f;
+  float power = total_voltage * current;
+  this->publish_state_(this->current_sensor_, current);
+  this->publish_state_(this->power_sensor_, power);
+  this->publish_state_(this->charging_power_sensor_, std::max(0.0f, power));
+  this->publish_state_(this->discharging_power_sensor_, std::abs(std::min(0.0f, power)));
+
+  this->publish_state_(this->capacity_remaining_sensor_, (float) jbd_get_16bit(4) * 0.01f);
+  this->publish_state_(this->nominal_capacity_sensor_, (float) jbd_get_16bit(6) * 0.01f);
+  this->publish_state_(this->charging_cycles_sensor_, (float) jbd_get_16bit(8));
+
+  uint16_t production_date = jbd_get_16bit(10);
+  ESP_LOGD(TAG, "  Date of manufacture: %d.%d.%d", 2000 + (production_date >> 9), (production_date >> 5) & 0x0f,
+           production_date & 0x1f);
+
+  uint32_t balance_status_bitmask = jbd_get_32bit(12);
+  this->publish_state_(this->balancer_status_bitmask_sensor_, (float) balance_status_bitmask);
+  this->publish_state_(this->balancing_binary_sensor_, balance_status_bitmask > 0);
+
+  uint16_t errors_bitmask = jbd_get_16bit(16);
+  this->publish_state_(this->errors_bitmask_sensor_, (float) errors_bitmask);
+  this->publish_state_(this->errors_text_sensor_, this->bitmask_to_string_(ERRORS, ERRORS_SIZE, errors_bitmask));
+
+  this->publish_state_(this->software_version_sensor_, (data[18] >> 4) + ((data[18] & 0x0f) * 0.1f));
+  this->publish_state_(this->state_of_charge_sensor_, data[19]);
+
+  uint8_t operation_status = data[20];
+  this->mosfet_status_ = operation_status;
+  this->publish_state_(this->operation_status_bitmask_sensor_, operation_status);
+  this->publish_state_(this->operation_status_text_sensor_,
+                       this->bitmask_to_string_(OPERATION_STATUS, OPERATION_STATUS_SIZE, operation_status));
+  this->publish_state_(this->charging_binary_sensor_, operation_status & JBD_MOS_CHARGE);
+  this->publish_state_(this->charging_switch_, operation_status & JBD_MOS_CHARGE);
+  this->publish_state_(this->discharging_binary_sensor_, operation_status & JBD_MOS_DISCHARGE);
+  this->publish_state_(this->discharging_switch_, operation_status & JBD_MOS_DISCHARGE);
+
+  this->publish_state_(this->battery_strings_sensor_, data[21]);
+
+  uint8_t temperature_sensors = std::min(data[22], (uint8_t) 6);
+  this->publish_state_(this->temperature_sensors_sensor_, temperature_sensors);
+  for (uint8_t i = 0; i < temperature_sensors; i++) {
+    this->publish_state_(this->temperatures_[i].temperature_sensor_,
+                         (float) (jbd_get_16bit(23 + (i * 2)) - 2731) * 0.1f);
   }
-
-  uint8_t raw_battery_type = data[23];
-  if (raw_battery_type < BATTERY_TYPES_SIZE) {
-    this->publish_state_(this->battery_type_text_sensor_, BATTERY_TYPES[raw_battery_type]);
-  } else {
-    this->publish_state_(this->battery_type_text_sensor_, "Unknown");
-  }
-
-  this->publish_state_(this->nominal_battery_capacity_number_, (float) heltec_get_32bit(24));
-  this->publish_state_(this->balance_start_voltage_number_, ieee_float_(heltec_get_32bit(28)));
 }
 
-void HeltecBalancerBle::decode_factory_defaults_(const std::vector<uint8_t> &data) {
-  auto heltec_get_16bit = [&](size_t i) -> uint16_t {
-    return (uint16_t(data[i + 1]) << 8) | (uint16_t(data[i + 0]) << 0);
-  };
-  auto heltec_get_32bit = [&](size_t i) -> uint32_t {
-    return (uint32_t(heltec_get_16bit(i + 2)) << 16) | (uint32_t(heltec_get_16bit(i + 0)) << 0);
+void JbdBmsBle::on_error_counts_data_(const std::vector<uint8_t> &data) {
+  auto jbd_get_16bit = [&](size_t i) -> uint16_t {
+    return (uint16_t(data[i + 0]) << 8) | (uint16_t(data[i + 1]) << 0);
   };
 
-  ESP_LOGI(TAG, "Factory defaults frame (%d bytes):", data.size());
-  ESP_LOGD(TAG, "  %s", format_hex_pretty(data.data(), data.size()).c_str());
+  ESP_LOGI(TAG, "Error counts frame (%d bytes) received", data.size());
+  ESP_LOGVV(TAG, "  %s", format_hex_pretty(&data.front(), data.size()).c_str());
 
-  // Skip the acknowledge frame
-  if (data.size() == 20) {
+  uint8_t data_len = data.size();
+  if (data_len != 24) {
+    ESP_LOGW(TAG, "Skipping error counts frame because of invalid length: %d", data_len);
     return;
   }
 
-  ESP_LOGI(TAG, "  Standard voltage 1: %.3f V", ieee_float_(heltec_get_32bit(8)));
-  ESP_LOGI(TAG, "  Standard voltage 2: %.3f V", ieee_float_(heltec_get_32bit(12)));
-  ESP_LOGI(TAG, "  Battery voltage 1: %.3f V", ieee_float_(heltec_get_32bit(16)));
-  ESP_LOGI(TAG, "  Battery voltage 2: %.3f V", ieee_float_(heltec_get_32bit(20)));
-  ESP_LOGI(TAG, "  Standard current 1: %.3f A", ieee_float_(heltec_get_32bit(24)));
-  ESP_LOGI(TAG, "  Standard current 2: %.3f A", ieee_float_(heltec_get_32bit(28)));
-  ESP_LOGI(TAG, "  SuperBat 1: %.3f", ieee_float_(heltec_get_32bit(32)));
-  ESP_LOGI(TAG, "  SuperBat 2: %.3f", ieee_float_(heltec_get_32bit(36)));
-  ESP_LOGI(TAG, "  Resistor 1: %.3f", ieee_float_(heltec_get_32bit(40)));
-  ESP_LOGI(TAG, "  Battery status: %.3f", ieee_float_(heltec_get_32bit(44)));
-  ESP_LOGI(TAG, "  Max voltage: %.3f V", ieee_float_(heltec_get_32bit(48)));
-  ESP_LOGI(TAG, "  Min voltage: %.3f V", ieee_float_(heltec_get_32bit(52)));
-  ESP_LOGI(TAG, "  Max temperature: %.3f °C", ieee_float_(heltec_get_32bit(56)));
-  ESP_LOGI(TAG, "  Min temperature: %.3f °C", ieee_float_(heltec_get_32bit(60)));
-  ESP_LOGI(TAG, "  Power on counter: %lu", (unsigned long) heltec_get_32bit(64));
-  ESP_LOGI(TAG, "  Total runtime: %lu", (unsigned long) heltec_get_32bit(68));
-  ESP_LOGI(TAG, "  Production date: %s", std::string(data.begin() + 72, data.begin() + 72 + 8).c_str());
+  this->publish_state_(this->short_circuit_error_count_sensor_, jbd_get_16bit(0));
+  this->publish_state_(this->charge_overcurrent_error_count_sensor_, jbd_get_16bit(2));
+  this->publish_state_(this->discharge_overcurrent_error_count_sensor_, jbd_get_16bit(4));
+  this->publish_state_(this->cell_overvoltage_error_count_sensor_, jbd_get_16bit(6));
+  this->publish_state_(this->cell_undervoltage_error_count_sensor_, jbd_get_16bit(8));
+  this->publish_state_(this->charge_overtemperature_error_count_sensor_, jbd_get_16bit(10));
+  this->publish_state_(this->charge_undertemperature_error_count_sensor_, jbd_get_16bit(12));
+  this->publish_state_(this->discharge_overtemperature_error_count_sensor_, jbd_get_16bit(14));
+  this->publish_state_(this->discharge_undertemperature_error_count_sensor_, jbd_get_16bit(16));
+  this->publish_state_(this->battery_overvoltage_error_count_sensor_, jbd_get_16bit(18));
+  this->publish_state_(this->battery_undervoltage_error_count_sensor_, jbd_get_16bit(20));
 }
 
-void HeltecBalancerBle::decode_device_info_(const std::vector<uint8_t> &data) {
-  auto heltec_get_16bit = [&](size_t i) -> uint16_t {
-    return (uint16_t(data[i + 1]) << 8) | (uint16_t(data[i + 0]) << 0);
-  };
-  auto heltec_get_32bit = [&](size_t i) -> uint32_t {
-    return (uint32_t(heltec_get_16bit(i + 2)) << 16) | (uint32_t(heltec_get_16bit(i + 0)) << 0);
-  };
+void JbdBmsBle::on_hardware_version_data_(const std::vector<uint8_t> &data) {
+  ESP_LOGI(TAG, "Hardware version frame (%d bytes) received", data.size());
+  ESP_LOGVV(TAG, "  %s", format_hex_pretty(&data.front(), data.size()).c_str());
 
-  ESP_LOGI(TAG, "Device info frame (%d bytes):", data.size());
-  ESP_LOGD(TAG, "  %s", format_hex_pretty(data.data(), data.size()).c_str());
+  this->device_model_ = std::string(data.begin(), data.end());
 
-  ESP_LOGI(TAG, "  Model: %s", std::string(data.begin() + 8, data.begin() + 8 + 16).c_str());
-  ESP_LOGI(TAG, "  Hardware version: %s", std::string(data.begin() + 24, data.begin() + 24 + 8).c_str());
-  ESP_LOGI(TAG, "  Software version: %s", std::string(data.begin() + 32, data.begin() + 32 + 8).c_str());
-  ESP_LOGI(TAG, "  Protocol version: %s", std::string(data.begin() + 40, data.begin() + 40 + 8).c_str());
-  ESP_LOGI(TAG, "  Manufacturing date: %s", std::string(data.begin() + 48, data.begin() + 48 + 8).c_str());
-  ESP_LOGI(TAG, "  Power on count: %d", heltec_get_16bit(56));
-  ESP_LOGI(TAG, "  Total runtime: %s (%lus)", format_total_runtime_(heltec_get_32bit(60)).c_str(),
-           (unsigned long) heltec_get_32bit(60));
-  this->publish_state_(this->total_runtime_sensor_, (float) heltec_get_32bit(60));
-  this->publish_state_(this->total_runtime_formatted_text_sensor_, format_total_runtime_(heltec_get_32bit(60)));
+  ESP_LOGI(TAG, "  Model name: %s", this->device_model_.c_str());
+  this->publish_state_(this->device_model_text_sensor_, this->device_model_);
 }
 
-bool HeltecBalancerBle::send_command(uint8_t function, uint8_t command, uint8_t register_address, uint32_t value) {
-  // CRITICAL: Check connection state before sending
-  if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_handle_ == 0) {
-    ESP_LOGW(TAG, "Cannot send command - not connected");
-    return false;
-  }
-
-  uint16_t length = 0x0014;
-
-  uint8_t frame[20];
-  frame[0] = SOF_REQUEST_BYTE1;
-  frame[1] = SOF_REQUEST_BYTE2;
-  frame[2] = DEVICE_ADDRESS;
-  frame[3] = function;
-  frame[4] = command >> 0;
-  frame[5] = register_address;
-  frame[6] = length >> 0;
-  frame[7] = length >> 8;
-  frame[8] = value >> 0;
-  frame[9] = value >> 8;
-  frame[10] = value >> 16;
-  frame[11] = value >> 24;
-  frame[12] = 0x00;
-  frame[13] = 0x00;
-  frame[14] = 0x00;
-  frame[15] = 0x00;
-  frame[16] = 0x00;
-  frame[17] = 0x00;
-  frame[18] = crc(frame, sizeof(frame) - 2);
-  frame[19] = END_OF_FRAME;
-
-  ESP_LOGD(TAG, "Write register: %s", format_hex_pretty(frame, sizeof(frame)).c_str());
-  auto status =
-      esp_ble_gattc_write_char(this->parent_->get_gattc_if(), this->parent_->get_conn_id(), this->char_handle_,
-                               sizeof(frame), frame, ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
-
-  if (status) {
-    ESP_LOGW(TAG, "[%s] esp_ble_gattc_write_char failed, status=%d", this->parent_->address_str().c_str(), status);
-  }
-
-  return (status == 0);
-}
-
-void HeltecBalancerBle::track_online_status_() {
+void JbdBmsBle::track_online_status_() {
   if (this->no_response_count_ < MAX_NO_RESPONSE_COUNT) {
     this->no_response_count_++;
   }
@@ -500,87 +634,180 @@ void HeltecBalancerBle::track_online_status_() {
   }
 }
 
-void HeltecBalancerBle::reset_online_status_tracker_() {
+void JbdBmsBle::reset_online_status_tracker_() {
   this->no_response_count_ = 0;
   this->publish_state_(this->online_status_binary_sensor_, true);
 }
 
-void HeltecBalancerBle::publish_device_unavailable_() {
+void JbdBmsBle::publish_device_unavailable_() {
   this->publish_state_(this->online_status_binary_sensor_, false);
-  this->publish_state_(this->operation_status_text_sensor_, "Offline");
+  this->publish_state_(this->errors_text_sensor_, "Offline");
 
+  this->publish_state_(state_of_charge_sensor_, NAN);
+  this->publish_state_(total_voltage_sensor_, NAN);
+  this->publish_state_(current_sensor_, NAN);
+  this->publish_state_(power_sensor_, NAN);
+  this->publish_state_(charging_power_sensor_, NAN);
+  this->publish_state_(discharging_power_sensor_, NAN);
+  this->publish_state_(nominal_capacity_sensor_, NAN);
+  this->publish_state_(charging_cycles_sensor_, NAN);
+  this->publish_state_(capacity_remaining_sensor_, NAN);
   this->publish_state_(min_cell_voltage_sensor_, NAN);
   this->publish_state_(max_cell_voltage_sensor_, NAN);
   this->publish_state_(min_voltage_cell_sensor_, NAN);
   this->publish_state_(max_voltage_cell_sensor_, NAN);
   this->publish_state_(delta_cell_voltage_sensor_, NAN);
   this->publish_state_(average_cell_voltage_sensor_, NAN);
-  this->publish_state_(total_voltage_sensor_, NAN);
-  this->publish_state_(temperature_sensor_1_sensor_, NAN);
-  this->publish_state_(temperature_sensor_2_sensor_, NAN);
-  this->publish_state_(total_runtime_sensor_, NAN);
-  this->publish_state_(balancing_current_sensor_, NAN);
+  this->publish_state_(operation_status_bitmask_sensor_, NAN);
   this->publish_state_(errors_bitmask_sensor_, NAN);
-  this->publish_state_(cell_detection_failed_bitmask_sensor_, NAN);
-  this->publish_state_(cell_overvoltage_bitmask_sensor_, NAN);
-  this->publish_state_(cell_undervoltage_bitmask_sensor_, NAN);
-  this->publish_state_(cell_polarity_error_bitmask_sensor_, NAN);
-  this->publish_state_(cell_excessive_line_resistance_bitmask_sensor_, NAN);
+  this->publish_state_(balancer_status_bitmask_sensor_, NAN);
+  this->publish_state_(battery_strings_sensor_, NAN);
+  this->publish_state_(temperature_sensors_sensor_, NAN);
+  this->publish_state_(software_version_sensor_, NAN);
 
-  // CRITICAL BUG FIX: Also publish NAN for cell resistance sensors
+  for (auto &temperature : this->temperatures_) {
+    this->publish_state_(temperature.temperature_sensor_, NAN);
+  }
+
   for (auto &cell : this->cells_) {
     this->publish_state_(cell.cell_voltage_sensor_, NAN);
-    this->publish_state_(cell.cell_resistance_sensor_, NAN);
   }
 }
 
-void HeltecBalancerBle::publish_state_(binary_sensor::BinarySensor *binary_sensor, const bool &state) {
+void JbdBmsBle::dump_config() {
+  ESP_LOGCONFIG(TAG, "JbdBmsBle:");
+  LOG_BINARY_SENSOR("", "Balancing", this->balancing_binary_sensor_);
+  LOG_BINARY_SENSOR("", "Charging", this->charging_binary_sensor_);
+  LOG_BINARY_SENSOR("", "Discharging", this->discharging_binary_sensor_);
+  LOG_BINARY_SENSOR("", "Online status", this->online_status_binary_sensor_);
+  LOG_SENSOR("", "Total voltage", this->total_voltage_sensor_);
+  LOG_SENSOR("", "Current", this->current_sensor_);
+  LOG_SENSOR("", "Power", this->power_sensor_);
+  LOG_SENSOR("", "State of charge", this->state_of_charge_sensor_);
+  LOG_TEXT_SENSOR("", "Operation status", this->operation_status_text_sensor_);
+  LOG_TEXT_SENSOR("", "Errors", this->errors_text_sensor_);
+}
+
+void JbdBmsBle::publish_state_(binary_sensor::BinarySensor *binary_sensor, const bool &state) {
   if (binary_sensor == nullptr)
     return;
   binary_sensor->publish_state(state);
 }
 
-void HeltecBalancerBle::publish_state_(number::Number *number, float value) {
-  if (number == nullptr)
-    return;
-  number->publish_state(value);
-}
-
-void HeltecBalancerBle::publish_state_(sensor::Sensor *sensor, float value) {
+void JbdBmsBle::publish_state_(sensor::Sensor *sensor, float value) {
   if (sensor == nullptr)
     return;
   sensor->publish_state(value);
 }
 
-void HeltecBalancerBle::publish_state_(switch_::Switch *obj, const bool &state) {
+void JbdBmsBle::publish_state_(switch_::Switch *obj, const bool &state) {
   if (obj == nullptr)
     return;
   obj->publish_state(state);
 }
 
-void HeltecBalancerBle::publish_state_(text_sensor::TextSensor *text_sensor, const std::string &state) {
+void JbdBmsBle::publish_state_(text_sensor::TextSensor *text_sensor, const std::string &state) {
   if (text_sensor == nullptr)
     return;
   text_sensor->publish_state(state);
 }
 
-std::string HeltecBalancerBle::error_bits_to_string_(uint16_t bitmask) {
-  std::string errors_list = "";
-  if (bitmask) {
-    for (uint8_t i = 0; i < CELL_ERRORS_SIZE; i++) {
-      if (bitmask & (1 << i)) {
-        errors_list.append(CELL_ERRORS[i]);
-        errors_list.append(";");
-      }
-    }
-    if (!errors_list.empty()) {
-      errors_list.pop_back();
-    }
+bool JbdBmsBle::change_mosfet_status(uint8_t address, uint8_t bitmask, bool state) {
+  if (this->mosfet_status_ == 255) {
+    ESP_LOGE(TAG, "Unable to change the Mosfet status because it's unknown");
+    return false;
   }
-  return errors_list;
+
+  uint16_t value = (this->mosfet_status_ & (~(1 << bitmask))) | ((uint8_t) state << bitmask);
+  this->mosfet_status_ = value;
+  value ^= (1 << 0);
+  value ^= (1 << 1);
+
+  return this->write_register(address, value);
 }
 
-}  // namespace heltec_balancer_ble
+bool JbdBmsBle::write_register(uint8_t address, uint16_t value) {
+  if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_command_handle_ == 0) {
+    ESP_LOGW(TAG, "Cannot write register - not connected");
+    return false;
+  }
+
+  uint8_t frame[9];
+  uint8_t data_len = 2;
+
+  frame[0] = JBD_PKT_START;
+  frame[1] = JBD_CMD_WRITE;
+  frame[2] = address;
+  frame[3] = data_len;
+  frame[4] = value >> 8;
+  frame[5] = value >> 0;
+  auto crc = chksum_(frame + 2, data_len + 2);
+  frame[6] = crc >> 8;
+  frame[7] = crc >> 0;
+  frame[8] = JBD_PKT_END;
+
+  ESP_LOGV(TAG, "Send command (handle 0x%02X): %s", this->char_command_handle_,
+           format_hex_pretty(frame, sizeof(frame)).c_str());
+  auto status =
+      esp_ble_gattc_write_char(this->parent_->get_gattc_if(), this->parent_->get_conn_id(), this->char_command_handle_,
+                               sizeof(frame), frame, ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
+
+  if (status) {
+    ESP_LOGW(TAG, "[%s] esp_ble_gattc_write_char failed, status=%d", this->parent_->address_str().c_str(), status);
+  }
+
+  return (status == 0);
+}
+
+bool JbdBmsBle::send_command(uint8_t action, uint8_t function) {
+  if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_command_handle_ == 0) {
+    ESP_LOGW(TAG, "Cannot send command - not connected");
+    return false;
+  }
+
+  uint8_t frame[7];
+  uint8_t data_len = 0;
+
+  frame[0] = JBD_PKT_START;
+  frame[1] = action;
+  frame[2] = function;
+  frame[3] = data_len;
+  auto crc = chksum_(frame + 2, data_len + 2);
+  frame[4] = crc >> 8;
+  frame[5] = crc >> 0;
+  frame[6] = JBD_PKT_END;
+
+  ESP_LOGV(TAG, "Send command (handle 0x%02X): %s", this->char_command_handle_,
+           format_hex_pretty(frame, sizeof(frame)).c_str());
+  auto status =
+      esp_ble_gattc_write_char(this->parent_->get_gattc_if(), this->parent_->get_conn_id(), this->char_command_handle_,
+                               sizeof(frame), frame, ESP_GATT_WRITE_TYPE_NO_RSP, ESP_GATT_AUTH_REQ_NONE);
+
+  if (status) {
+    ESP_LOGW(TAG, "[%s] esp_ble_gattc_write_char failed, status=%d", this->parent_->address_str().c_str(), status);
+  }
+
+  return (status == 0);
+}
+
+std::string JbdBmsBle::bitmask_to_string_(const char *const messages[], const uint8_t &messages_size,
+                                          const uint16_t &mask) {
+  std::string values = "";
+  if (mask) {
+    for (int i = 0; i < messages_size; i++) {
+      if (mask & (1 << i)) {
+        values.append(messages[i]);
+        values.append(";");
+      }
+    }
+    if (!values.empty()) {
+      values.pop_back();
+    }
+  }
+  return values;
+}
+
+}  // namespace jbd_bms_ble
 }  // namespace esphome
 
 #endif
