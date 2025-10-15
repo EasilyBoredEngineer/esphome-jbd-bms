@@ -804,9 +804,8 @@ std::string JbdBmsBle::bitmask_to_string_(const char *const messages[], const ui
   if (mask) {
     for (int i = 0; i < messages_size; i++) {
       if (mask & (1 << i)) {
-        // Read pointer from PROGMEM, then read string from flash
-        const char* str_ptr = (const char*)pgm_read_ptr(&messages[i]);
-        values.append(str_ptr);
+        // On ESP32/ESP-IDF, PROGMEM strings can be read directly via flash cache
+        values.append(messages[i]);
         values.append(";");
       }
     }
