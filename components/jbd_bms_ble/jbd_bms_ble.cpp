@@ -106,7 +106,6 @@ void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
     case ESP_GATTC_DISCONNECT_EVT: {
       ESP_LOGI(TAG, "Disconnect event - cleaning up");
       
-      // CRITICAL: Save handles before clearing
       uint16_t notify_handle = this->char_notify_handle_;
       
       if (notify_handle != 0) {
@@ -117,16 +116,12 @@ void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
         }
       }
       
-      // CRITICAL: Set state first to prevent race conditions
       this->node_state = espbt::ClientState::IDLE;
       this->char_notify_handle_ = 0;
       this->char_command_handle_ = 0;
-
-      // Reset authentication state
       this->authentication_state_ = AuthState::NOT_AUTHENTICATED;
       this->random_byte_ = 0;
 
-      // CRITICAL: Clear buffer LAST
       this->frame_buffer_.clear();
       this->frame_buffer_.shrink_to_fit();
 
@@ -155,7 +150,6 @@ void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       }
       this->char_command_handle_ = char_command->handle;
       
-      // Pre-allocate buffer
       this->frame_buffer_.clear();
       this->frame_buffer_.reserve(MAX_RESPONSE_SIZE);
       
@@ -173,7 +167,6 @@ void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       break;
     }
     case ESP_GATTC_NOTIFY_EVT: {
-      // CRITICAL: Check handle validity
       if (this->char_notify_handle_ == 0 || param->notify.handle != this->char_notify_handle_)
         break;
 
@@ -255,7 +248,6 @@ void JbdBmsBle::send_root_password_() {
   uint8_t *remote_bda = this->parent()->get_remote_bda();
   uint8_t encrypted[ROOT_PASSWORD_LENGTH];
 
-  // Read root password from PROGMEM and encrypt
   for (size_t i = 0; i < ROOT_PASSWORD_LENGTH; i++) {
     uint8_t mac_byte = (i < 6) ? remote_bda[i] : 0x00;
     uint8_t pwd_byte = pgm_read_byte(&ROOT_PASSWORD[i]);
@@ -278,7 +270,6 @@ void JbdBmsBle::send_root_password_() {
 }
 
 void JbdBmsBle::send_auth_frame_(uint8_t *frame, size_t length) {
-  // CRITICAL: Check connection state before sending
   if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_command_handle_ == 0) {
     ESP_LOGW(TAG, "Cannot send auth frame - not connected");
     return;
@@ -297,7 +288,6 @@ void JbdBmsBle::send_auth_frame_(uint8_t *frame, size_t length) {
 }
 
 void JbdBmsBle::assemble(const uint8_t *data, uint16_t length) {
-  // CRITICAL: Check connection state
   if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_notify_handle_ == 0) {
     ESP_LOGV(TAG, "Ignoring data - not in established state");
     return;
@@ -309,7 +299,6 @@ void JbdBmsBle::assemble(const uint8_t *data, uint16_t length) {
     return;
   }
 
-  // Auth frames are complete in single notification
   if (length >= 5 && data[0] == JBD_AUTH_PKT_START && data[1] == JBD_AUTH_PKT_SECOND) {
     uint8_t command = data[2];
     uint8_t data_len = data[3];
@@ -328,7 +317,6 @@ void JbdBmsBle::assemble(const uint8_t *data, uint16_t length) {
     return;
   }
 
-  // Regular BMS frames need assembly
   bool is_new_frame = false;
   if (length >= 3 && data[0] == JBD_PKT_START && data[2] == 0x00) {
     is_new_frame = true;
@@ -506,7 +494,6 @@ void JbdBmsBle::on_cell_info_data_(const std::vector<uint8_t> &data) {
     return;
   }
 
-  // Single-pass cell processing - OPTIMIZED
   uint8_t cells = std::min(data_len / 2, 32);
   float min_cell_voltage = 100.0f;
   float max_cell_voltage = 0.0f;
@@ -818,7 +805,6 @@ bool JbdBmsBle::change_mosfet_status(uint8_t address, uint8_t bitmask, bool stat
 }
 
 bool JbdBmsBle::write_register(uint8_t address, uint16_t value) {
-  // CRITICAL: Check connection state before sending
   if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_command_handle_ == 0) {
     ESP_LOGW(TAG, "Cannot write register - not connected");
     return false;
@@ -852,7 +838,6 @@ bool JbdBmsBle::write_register(uint8_t address, uint16_t value) {
 }
 
 bool JbdBmsBle::send_command(uint8_t action, uint8_t function) {
-  // CRITICAL: Check connection state before sending
   if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_command_handle_ == 0) {
     ESP_LOGW(TAG, "Cannot send command - not connected");
     return false;
