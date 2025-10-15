@@ -50,38 +50,46 @@ static constexpr uint8_t JBD_MOS_DISCHARGE = 0x02;
 static constexpr uint8_t ERRORS_SIZE = 16;
 static constexpr uint8_t OPERATION_STATUS_SIZE = 8;
 
-// Simple string arrays - no PROGMEM
-static const char *const ERRORS[] = {
-    "Cell overvoltage",
-    "Cell undervoltage",
-    "Pack overvoltage",
-    "Pack undervoltage",
-    "Charging over temperature",
-    "Charging under temperature",
-    "Discharging over temperature",
-    "Discharging under temperature",
-    "Charging overcurrent",
-    "Discharging overcurrent",
-    "Short circuit",
-    "IC front-end error",
-    "Mosfet Software Lock",
-    "Charge timeout Close",
-    "Unknown (0x0E)",
-    "Unknown (0x0F)"
+// ESP-IDF compatible PROGMEM - stores in flash, accessed via flash cache
+static const char ERRORS_0[] PROGMEM = "Cell overvoltage";
+static const char ERRORS_1[] PROGMEM = "Cell undervoltage";
+static const char ERRORS_2[] PROGMEM = "Pack overvoltage";
+static const char ERRORS_3[] PROGMEM = "Pack undervoltage";
+static const char ERRORS_4[] PROGMEM = "Charging over temperature";
+static const char ERRORS_5[] PROGMEM = "Charging under temperature";
+static const char ERRORS_6[] PROGMEM = "Discharging over temperature";
+static const char ERRORS_7[] PROGMEM = "Discharging under temperature";
+static const char ERRORS_8[] PROGMEM = "Charging overcurrent";
+static const char ERRORS_9[] PROGMEM = "Discharging overcurrent";
+static const char ERRORS_10[] PROGMEM = "Short circuit";
+static const char ERRORS_11[] PROGMEM = "IC front-end error";
+static const char ERRORS_12[] PROGMEM = "Mosfet Software Lock";
+static const char ERRORS_13[] PROGMEM = "Charge timeout Close";
+static const char ERRORS_14[] PROGMEM = "Unknown (0x0E)";
+static const char ERRORS_15[] PROGMEM = "Unknown (0x0F)";
+
+static const char *const ERRORS[] PROGMEM = {
+    ERRORS_0, ERRORS_1, ERRORS_2, ERRORS_3,
+    ERRORS_4, ERRORS_5, ERRORS_6, ERRORS_7,
+    ERRORS_8, ERRORS_9, ERRORS_10, ERRORS_11,
+    ERRORS_12, ERRORS_13, ERRORS_14, ERRORS_15
 };
 
-static const char *const OPERATION_STATUS[] = {
-    "Charging",
-    "Discharging",
-    "Unknown (0x04)",
-    "Unknown (0x08)",
-    "Unknown (0x10)",
-    "Unknown (0x20)",
-    "Unknown (0x40)",
-    "Unknown (0x80)"
+static const char OP_STATUS_0[] PROGMEM = "Charging";
+static const char OP_STATUS_1[] PROGMEM = "Discharging";
+static const char OP_STATUS_2[] PROGMEM = "Unknown (0x04)";
+static const char OP_STATUS_3[] PROGMEM = "Unknown (0x08)";
+static const char OP_STATUS_4[] PROGMEM = "Unknown (0x10)";
+static const char OP_STATUS_5[] PROGMEM = "Unknown (0x20)";
+static const char OP_STATUS_6[] PROGMEM = "Unknown (0x40)";
+static const char OP_STATUS_7[] PROGMEM = "Unknown (0x80)";
+
+static const char *const OPERATION_STATUS[] PROGMEM = {
+    OP_STATUS_0, OP_STATUS_1, OP_STATUS_2, OP_STATUS_3,
+    OP_STATUS_4, OP_STATUS_5, OP_STATUS_6, OP_STATUS_7
 };
 
-static const uint8_t ROOT_PASSWORD[] = {
+static const uint8_t ROOT_PASSWORD[] PROGMEM = {
     0x4a, 0x42, 0x44, 0x62, 0x74, 0x70, 0x77, 0x64,
     0x21, 0x40, 0x23, 0x32, 0x30, 0x32, 0x33
 };
@@ -796,7 +804,9 @@ std::string JbdBmsBle::bitmask_to_string_(const char *const messages[], const ui
   if (mask) {
     for (int i = 0; i < messages_size; i++) {
       if (mask & (1 << i)) {
-        values.append(messages[i]);
+        // Read pointer from PROGMEM, then read string from flash
+        const char* str_ptr = (const char*)pgm_read_ptr(&messages[i]);
+        values.append(str_ptr);
         values.append(";");
       }
     }
