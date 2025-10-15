@@ -2,6 +2,10 @@
 #include "esphome/core/log.h"
 #include "esphome/core/helpers.h"
 
+#ifdef USE_ESP32
+#include <pgmspace.h>
+#endif
+
 namespace esphome {
 namespace jbd_bms_ble {
 
@@ -885,7 +889,9 @@ std::string JbdBmsBle::bitmask_to_string_(const char *const messages[], const ui
   if (mask) {
     for (int i = 0; i < messages_size; i++) {
       if (mask & (1 << i)) {
-        values.append(FPSTR((char*)pgm_read_ptr(&messages[i])));
+        char buffer[60];
+        strcpy_P(buffer, (PGM_P)pgm_read_ptr(&messages[i]));
+        values.append(buffer);
         values.append(";");
       }
     }
