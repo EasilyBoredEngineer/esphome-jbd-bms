@@ -3,6 +3,8 @@
 #include "esphome/core/helpers.h"
 
 #ifdef USE_ESP32
+#include <pgmspace.h>
+#endif
 
 namespace esphome {
 namespace jbd_bms_ble {
@@ -50,38 +52,46 @@ static constexpr uint8_t JBD_MOS_DISCHARGE = 0x02;
 static constexpr uint8_t ERRORS_SIZE = 16;
 static constexpr uint8_t OPERATION_STATUS_SIZE = 8;
 
-// Simple string arrays - no PROGMEM
-static const char *const ERRORS[] = {
-    "Cell overvoltage",
-    "Cell undervoltage",
-    "Pack overvoltage",
-    "Pack undervoltage",
-    "Charging over temperature",
-    "Charging under temperature",
-    "Discharging over temperature",
-    "Discharging under temperature",
-    "Charging overcurrent",
-    "Discharging overcurrent",
-    "Short circuit",
-    "IC front-end error",
-    "Mosfet Software Lock",
-    "Charge timeout Close",
-    "Unknown (0x0E)",
-    "Unknown (0x0F)"
+// Use PROGMEM for constant strings
+static const char ERR_CELL_OV[] PROGMEM = "Cell overvoltage";
+static const char ERR_CELL_UV[] PROGMEM = "Cell undervoltage";
+static const char ERR_PACK_OV[] PROGMEM = "Pack overvoltage";
+static const char ERR_PACK_UV[] PROGMEM = "Pack undervoltage";
+static const char ERR_CHG_OT[] PROGMEM = "Charging over temperature";
+static const char ERR_CHG_UT[] PROGMEM = "Charging under temperature";
+static const char ERR_DSG_OT[] PROGMEM = "Discharging over temperature";
+static const char ERR_DSG_UT[] PROGMEM = "Discharging under temperature";
+static const char ERR_CHG_OC[] PROGMEM = "Charging overcurrent";
+static const char ERR_DSG_OC[] PROGMEM = "Discharging overcurrent";
+static const char ERR_SHORT[] PROGMEM = "Short circuit";
+static const char ERR_IC[] PROGMEM = "IC front-end error";
+static const char ERR_MOSFET_LOCK[] PROGMEM = "Mosfet Software Lock";
+static const char ERR_CHG_TIMEOUT[] PROGMEM = "Charge timeout Close";
+static const char ERR_UNK_0E[] PROGMEM = "Unknown (0x0E)";
+static const char ERR_UNK_0F[] PROGMEM = "Unknown (0x0F)";
+
+static const char *const ERRORS[] PROGMEM = {
+    ERR_CELL_OV, ERR_CELL_UV, ERR_PACK_OV, ERR_PACK_UV,
+    ERR_CHG_OT, ERR_CHG_UT, ERR_DSG_OT, ERR_DSG_UT,
+    ERR_CHG_OC, ERR_DSG_OC, ERR_SHORT, ERR_IC,
+    ERR_MOSFET_LOCK, ERR_CHG_TIMEOUT, ERR_UNK_0E, ERR_UNK_0F
 };
 
-static const char *const OPERATION_STATUS[] = {
-    "Charging",
-    "Discharging",
-    "Unknown (0x04)",
-    "Unknown (0x08)",
-    "Unknown (0x10)",
-    "Unknown (0x20)",
-    "Unknown (0x40)",
-    "Unknown (0x80)"
+static const char OP_CHARGING[] PROGMEM = "Charging";
+static const char OP_DISCHARGING[] PROGMEM = "Discharging";
+static const char OP_UNK_04[] PROGMEM = "Unknown (0x04)";
+static const char OP_UNK_08[] PROGMEM = "Unknown (0x08)";
+static const char OP_UNK_10[] PROGMEM = "Unknown (0x10)";
+static const char OP_UNK_20[] PROGMEM = "Unknown (0x20)";
+static const char OP_UNK_40[] PROGMEM = "Unknown (0x40)";
+static const char OP_UNK_80[] PROGMEM = "Unknown (0x80)";
+
+static const char *const OPERATION_STATUS[] PROGMEM = {
+    OP_CHARGING, OP_DISCHARGING, OP_UNK_04, OP_UNK_08,
+    OP_UNK_10, OP_UNK_20, OP_UNK_40, OP_UNK_80
 };
 
-static const uint8_t ROOT_PASSWORD[] = {
+static const uint8_t ROOT_PASSWORD[] PROGMEM = {
     0x4a, 0x42, 0x44, 0x62, 0x74, 0x70, 0x77, 0x64,
     0x21, 0x40, 0x23, 0x32, 0x30, 0x32, 0x33
 };
@@ -96,10 +106,8 @@ void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
     case ESP_GATTC_DISCONNECT_EVT: {
       ESP_LOGI(TAG, "Disconnect event - cleaning up");
       
-      // CRITICAL: Save handle before clearing state
       uint16_t notify_handle = this->char_notify_handle_;
       
-      // CRITICAL: Unregister notifications BEFORE clearing state
       if (notify_handle != 0) {
         auto status = esp_ble_gattc_unregister_for_notify(this->parent()->get_gattc_if(),
                                                           this->parent()->get_remote_bda(), notify_handle);
@@ -108,14 +116,12 @@ void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
         }
       }
       
-      // CRITICAL: Set state BEFORE clearing handles
       this->node_state = espbt::ClientState::IDLE;
       this->char_notify_handle_ = 0;
       this->char_command_handle_ = 0;
       this->authentication_state_ = AuthState::NOT_AUTHENTICATED;
       this->random_byte_ = 0;
 
-      // CRITICAL: Clear buffer LAST
       this->frame_buffer_.clear();
       this->frame_buffer_.shrink_to_fit();
 
@@ -144,7 +150,6 @@ void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       }
       this->char_command_handle_ = char_command->handle;
       
-      // Pre-allocate buffer
       this->frame_buffer_.clear();
       this->frame_buffer_.reserve(MAX_RESPONSE_SIZE);
       
@@ -162,7 +167,6 @@ void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       break;
     }
     case ESP_GATTC_NOTIFY_EVT: {
-      // CRITICAL: Check handle validity before processing
       if (this->char_notify_handle_ == 0 || param->notify.handle != this->char_notify_handle_)
         break;
 
@@ -246,7 +250,7 @@ void JbdBmsBle::send_root_password_() {
 
   for (size_t i = 0; i < ROOT_PASSWORD_LENGTH; i++) {
     uint8_t mac_byte = (i < 6) ? remote_bda[i] : 0x00;
-    uint8_t pwd_byte = ROOT_PASSWORD[i];
+    uint8_t pwd_byte = pgm_read_byte(&ROOT_PASSWORD[i]);
     encrypted[i] = ((mac_byte ^ pwd_byte) + this->random_byte_) & 255;
   }
 
@@ -284,13 +288,11 @@ void JbdBmsBle::send_auth_frame_(uint8_t *frame, size_t length) {
 }
 
 void JbdBmsBle::assemble(const uint8_t *data, uint16_t length) {
-  // CRITICAL: Check connection state before processing
   if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_notify_handle_ == 0) {
     ESP_LOGV(TAG, "Ignoring data - not in established state");
     return;
   }
 
-  // Safety check for buffer overflow
   if (this->frame_buffer_.size() > MAX_RESPONSE_SIZE) {
     ESP_LOGW(TAG, "Maximum response size exceeded");
     this->frame_buffer_.clear();
@@ -674,41 +676,115 @@ void JbdBmsBle::publish_device_unavailable_() {
   }
 }
 
-void JbdBmsBle::dump_config() {
+void JbdBmsBle::dump_config() {  // NOLINT(google-readability-function-size,readability-function-size)
   ESP_LOGCONFIG(TAG, "JbdBmsBle:");
+
   LOG_BINARY_SENSOR("", "Balancing", this->balancing_binary_sensor_);
   LOG_BINARY_SENSOR("", "Charging", this->charging_binary_sensor_);
   LOG_BINARY_SENSOR("", "Discharging", this->discharging_binary_sensor_);
   LOG_BINARY_SENSOR("", "Online status", this->online_status_binary_sensor_);
+
   LOG_SENSOR("", "Total voltage", this->total_voltage_sensor_);
+  LOG_SENSOR("", "Battery strings", this->battery_strings_sensor_);
+  LOG_SENSOR("", "Software version", this->software_version_sensor_);
   LOG_SENSOR("", "Current", this->current_sensor_);
   LOG_SENSOR("", "Power", this->power_sensor_);
+  LOG_SENSOR("", "Charging Power", this->charging_power_sensor_);
+  LOG_SENSOR("", "Discharging Power", this->discharging_power_sensor_);
   LOG_SENSOR("", "State of charge", this->state_of_charge_sensor_);
+  LOG_SENSOR("", "Operation status bitmask", operation_status_bitmask_sensor_);
+  LOG_SENSOR("", "Errors bitmask", errors_bitmask_sensor_);
+  LOG_SENSOR("", "Nominal capacity", this->nominal_capacity_sensor_);
+  LOG_SENSOR("", "Charging cycles", this->charging_cycles_sensor_);
+  LOG_SENSOR("", "Balancer status bitmask", balancer_status_bitmask_sensor_);
+  LOG_SENSOR("", "Capacity remaining", this->capacity_remaining_sensor_);
+  LOG_SENSOR("", "Average cell voltage sensor", this->average_cell_voltage_sensor_);
+  LOG_SENSOR("", "Delta cell voltage sensor", delta_cell_voltage_sensor_);
+  LOG_SENSOR("", "Maximum cell voltage", this->max_cell_voltage_sensor_);
+  LOG_SENSOR("", "Min voltage cell", this->min_voltage_cell_sensor_);
+  LOG_SENSOR("", "Max voltage cell", this->max_voltage_cell_sensor_);
+  LOG_SENSOR("", "Minimum cell voltage", this->min_cell_voltage_sensor_);
+  LOG_SENSOR("", "Temperature sensors", temperature_sensors_sensor_);
+  LOG_SENSOR("", "Short circuit error count", this->short_circuit_error_count_sensor_);
+  LOG_SENSOR("", "Charge overcurrent error count", this->charge_overcurrent_error_count_sensor_);
+  LOG_SENSOR("", "Discharge overcurrent error count", this->discharge_overcurrent_error_count_sensor_);
+  LOG_SENSOR("", "Cell overvoltage error count", this->cell_overvoltage_error_count_sensor_);
+  LOG_SENSOR("", "Cell undervoltage error count", this->cell_undervoltage_error_count_sensor_);
+  LOG_SENSOR("", "Charge overtemperature error count", this->charge_overtemperature_error_count_sensor_);
+  LOG_SENSOR("", "Charge undertemperature error count", this->charge_undertemperature_error_count_sensor_);
+  LOG_SENSOR("", "Discharge overtemperature error count", this->discharge_overtemperature_error_count_sensor_);
+  LOG_SENSOR("", "Discharge undertemperature error count", this->discharge_undertemperature_error_count_sensor_);
+  LOG_SENSOR("", "Battery overvoltage error count", this->battery_overvoltage_error_count_sensor_);
+  LOG_SENSOR("", "Battery undervoltage error count", this->battery_undervoltage_error_count_sensor_);
+  LOG_SENSOR("", "Temperature 1", this->temperatures_[0].temperature_sensor_);
+  LOG_SENSOR("", "Temperature 2", this->temperatures_[1].temperature_sensor_);
+  LOG_SENSOR("", "Temperature 3", this->temperatures_[2].temperature_sensor_);
+  LOG_SENSOR("", "Temperature 4", this->temperatures_[3].temperature_sensor_);
+  LOG_SENSOR("", "Temperature 5", this->temperatures_[4].temperature_sensor_);
+  LOG_SENSOR("", "Temperature 6", this->temperatures_[5].temperature_sensor_);
+  LOG_SENSOR("", "Cell Voltage 1", this->cells_[0].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 2", this->cells_[1].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 3", this->cells_[2].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 4", this->cells_[3].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 5", this->cells_[4].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 6", this->cells_[5].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 7", this->cells_[6].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 8", this->cells_[7].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 9", this->cells_[8].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 10", this->cells_[9].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 11", this->cells_[10].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 12", this->cells_[11].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 13", this->cells_[12].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 14", this->cells_[13].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 15", this->cells_[14].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 16", this->cells_[15].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 17", this->cells_[16].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 18", this->cells_[17].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 19", this->cells_[18].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 20", this->cells_[19].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 21", this->cells_[20].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 22", this->cells_[21].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 23", this->cells_[22].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 24", this->cells_[23].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 25", this->cells_[24].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 26", this->cells_[25].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 27", this->cells_[26].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 28", this->cells_[27].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 29", this->cells_[28].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 30", this->cells_[29].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 31", this->cells_[30].cell_voltage_sensor_);
+  LOG_SENSOR("", "Cell Voltage 32", this->cells_[31].cell_voltage_sensor_);
+
   LOG_TEXT_SENSOR("", "Operation status", this->operation_status_text_sensor_);
   LOG_TEXT_SENSOR("", "Errors", this->errors_text_sensor_);
+  LOG_TEXT_SENSOR("", "Device model", this->device_model_text_sensor_);
 }
 
 void JbdBmsBle::publish_state_(binary_sensor::BinarySensor *binary_sensor, const bool &state) {
   if (binary_sensor == nullptr)
     return;
+
   binary_sensor->publish_state(state);
 }
 
 void JbdBmsBle::publish_state_(sensor::Sensor *sensor, float value) {
   if (sensor == nullptr)
     return;
+
   sensor->publish_state(value);
 }
 
 void JbdBmsBle::publish_state_(switch_::Switch *obj, const bool &state) {
   if (obj == nullptr)
     return;
+
   obj->publish_state(state);
 }
 
 void JbdBmsBle::publish_state_(text_sensor::TextSensor *text_sensor, const std::string &state) {
   if (text_sensor == nullptr)
     return;
+
   text_sensor->publish_state(state);
 }
 
@@ -719,7 +795,9 @@ bool JbdBmsBle::change_mosfet_status(uint8_t address, uint8_t bitmask, bool stat
   }
 
   uint16_t value = (this->mosfet_status_ & (~(1 << bitmask))) | ((uint8_t) state << bitmask);
+
   this->mosfet_status_ = value;
+
   value ^= (1 << 0);
   value ^= (1 << 1);
 
@@ -796,7 +874,9 @@ std::string JbdBmsBle::bitmask_to_string_(const char *const messages[], const ui
   if (mask) {
     for (int i = 0; i < messages_size; i++) {
       if (mask & (1 << i)) {
-        values.append(messages[i]);
+        char buffer[60];
+        strcpy_P(buffer, (PGM_P)pgm_read_ptr(&messages[i]));
+        values.append(buffer);
         values.append(";");
       }
     }
@@ -809,5 +889,3 @@ std::string JbdBmsBle::bitmask_to_string_(const char *const messages[], const ui
 
 }  // namespace jbd_bms_ble
 }  // namespace esphome
-
-#endif
