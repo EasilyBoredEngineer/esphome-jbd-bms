@@ -7,79 +7,91 @@ namespace jbd_bms_ble {
 
 static const char *const TAG = "jbd_bms_ble";
 
-static const uint8_t MAX_NO_RESPONSE_COUNT = 10;
+static constexpr uint8_t MAX_NO_RESPONSE_COUNT = 10;
 
-static const uint16_t JBD_BMS_SERVICE_UUID = 0xFF00;
-static const uint16_t JBD_BMS_NOTIFY_CHARACTERISTIC_UUID = 0xFF01;
-static const uint16_t JBD_BMS_CONTROL_CHARACTERISTIC_UUID = 0xFF02;
+static constexpr uint16_t JBD_BMS_SERVICE_UUID = 0xFF00;
+static constexpr uint16_t JBD_BMS_NOTIFY_CHARACTERISTIC_UUID = 0xFF01;
+static constexpr uint16_t JBD_BMS_CONTROL_CHARACTERISTIC_UUID = 0xFF02;
 
-static const uint16_t MAX_RESPONSE_SIZE = 41;
+static constexpr uint16_t MAX_RESPONSE_SIZE = 41;
 
-static const uint8_t JBD_PKT_START = 0xDD;
-static const uint8_t JBD_PKT_END = 0x77;
-static const uint8_t JBD_CMD_READ = 0xA5;
-static const uint8_t JBD_CMD_WRITE = 0x5A;
+static constexpr uint8_t JBD_PKT_START = 0xDD;
+static constexpr uint8_t JBD_PKT_END = 0x77;
+static constexpr uint8_t JBD_CMD_READ = 0xA5;
+static constexpr uint8_t JBD_CMD_WRITE = 0x5A;
 
-static const uint8_t JBD_AUTH_PKT_START = 0xFF;
-static const uint8_t JBD_AUTH_PKT_SECOND = 0xAA;
-static const uint8_t JBD_AUTH_PKT_END = 0x77;
+static constexpr uint8_t JBD_AUTH_PKT_START = 0xFF;
+static constexpr uint8_t JBD_AUTH_PKT_SECOND = 0xAA;
+static constexpr uint8_t JBD_AUTH_PKT_END = 0x77;
 
-static const uint8_t JBD_AUTH_SEND_APP_KEY = 0x15;
-static const uint8_t JBD_AUTH_GET_RANDOM = 0x17;
-static const uint8_t JBD_AUTH_SEND_PASSWORD = 0x18;
-static const uint8_t JBD_AUTH_CHANGE_PASSWORD = 0x16;
-static const uint8_t JBD_AUTH_SEND_ROOT_PASSWORD = 0x1D;
+static constexpr uint8_t JBD_AUTH_SEND_APP_KEY = 0x15;
+static constexpr uint8_t JBD_AUTH_GET_RANDOM = 0x17;
+static constexpr uint8_t JBD_AUTH_SEND_PASSWORD = 0x18;
+static constexpr uint8_t JBD_AUTH_CHANGE_PASSWORD = 0x16;
+static constexpr uint8_t JBD_AUTH_SEND_ROOT_PASSWORD = 0x1D;
 
-static const uint8_t JBD_CMD_HWINFO = 0x03;
-static const uint8_t JBD_CMD_CELLINFO = 0x04;
-static const uint8_t JBD_CMD_HWVER = 0x05;
+static constexpr uint8_t JBD_CMD_HWINFO = 0x03;
+static constexpr uint8_t JBD_CMD_CELLINFO = 0x04;
+static constexpr uint8_t JBD_CMD_HWVER = 0x05;
 
-static const uint8_t JBD_CMD_ENTER_FACTORY = 0x00;
-static const uint8_t JBD_CMD_EXIT_FACTORY = 0x01;
-static const uint8_t JBD_CMD_FORCE_SOC_RESET = 0x0A;
-static const uint8_t JBD_CMD_ERROR_COUNTS = 0xAA;
-static const uint8_t JBD_CMD_CAP_REM = 0xE0;   // Set remaining capacity
-static const uint8_t JBD_CMD_MOS = 0xE1;       // Set charging/discharging bitmask
-static const uint8_t JBD_CMD_BALANCER = 0xE2;  // Enable/disable balancer
+static constexpr uint8_t JBD_CMD_ENTER_FACTORY = 0x00;
+static constexpr uint8_t JBD_CMD_EXIT_FACTORY = 0x01;
+static constexpr uint8_t JBD_CMD_FORCE_SOC_RESET = 0x0A;
+static constexpr uint8_t JBD_CMD_ERROR_COUNTS = 0xAA;
+static constexpr uint8_t JBD_CMD_CAP_REM = 0xE0;
+static constexpr uint8_t JBD_CMD_MOS = 0xE1;
+static constexpr uint8_t JBD_CMD_BALANCER = 0xE2;
 
-static const uint8_t JBD_MOS_CHARGE = 0x01;
-static const uint8_t JBD_MOS_DISCHARGE = 0x02;
+static constexpr uint8_t JBD_MOS_CHARGE = 0x01;
+static constexpr uint8_t JBD_MOS_DISCHARGE = 0x02;
 
-static const uint8_t ERRORS_SIZE = 16;
-static const char *const ERRORS[ERRORS_SIZE] = {
-    "Cell overvoltage",               // 0x00
-    "Cell undervoltage",              // 0x01
-    "Pack overvoltage",               // 0x02
-    "Pack undervoltage",              // 0x03
-    "Charging over temperature",      // 0x04
-    "Charging under temperature",     // 0x05
-    "Discharging over temperature",   // 0x06
-    "Discharging under temperature",  // 0x07
-    "Charging overcurrent",           // 0x08
-    "Discharging overcurrent",        // 0x09
-    "Short circuit",                  // 0x0A
-    "IC front-end error",             // 0x0B
-    "Mosfet Software Lock",           // 0x0C (See register 0xE1 "MOSFET control")
-    "Charge timeout Close",           // 0x0D
-    "Unknown (0x0E)",                 // 0x0E
-    "Unknown (0x0F)",                 // 0x0F
+static constexpr uint8_t ERRORS_SIZE = 16;
+static constexpr uint8_t OPERATION_STATUS_SIZE = 8;
+
+// Use PROGMEM for constant strings
+static const char ERR_CELL_OV[] PROGMEM = "Cell overvoltage";
+static const char ERR_CELL_UV[] PROGMEM = "Cell undervoltage";
+static const char ERR_PACK_OV[] PROGMEM = "Pack overvoltage";
+static const char ERR_PACK_UV[] PROGMEM = "Pack undervoltage";
+static const char ERR_CHG_OT[] PROGMEM = "Charging over temperature";
+static const char ERR_CHG_UT[] PROGMEM = "Charging under temperature";
+static const char ERR_DSG_OT[] PROGMEM = "Discharging over temperature";
+static const char ERR_DSG_UT[] PROGMEM = "Discharging under temperature";
+static const char ERR_CHG_OC[] PROGMEM = "Charging overcurrent";
+static const char ERR_DSG_OC[] PROGMEM = "Discharging overcurrent";
+static const char ERR_SHORT[] PROGMEM = "Short circuit";
+static const char ERR_IC[] PROGMEM = "IC front-end error";
+static const char ERR_MOSFET_LOCK[] PROGMEM = "Mosfet Software Lock";
+static const char ERR_CHG_TIMEOUT[] PROGMEM = "Charge timeout Close";
+static const char ERR_UNK_0E[] PROGMEM = "Unknown (0x0E)";
+static const char ERR_UNK_0F[] PROGMEM = "Unknown (0x0F)";
+
+static const char *const ERRORS[] PROGMEM = {
+    ERR_CELL_OV, ERR_CELL_UV, ERR_PACK_OV, ERR_PACK_UV,
+    ERR_CHG_OT, ERR_CHG_UT, ERR_DSG_OT, ERR_DSG_UT,
+    ERR_CHG_OC, ERR_DSG_OC, ERR_SHORT, ERR_IC,
+    ERR_MOSFET_LOCK, ERR_CHG_TIMEOUT, ERR_UNK_0E, ERR_UNK_0F
 };
 
-static const uint8_t OPERATION_STATUS_SIZE = 8;
-static const char *const OPERATION_STATUS[OPERATION_STATUS_SIZE] = {
-    "Charging",        // 0x01
-    "Discharging",     // 0x02
-    "Unknown (0x04)",  // 0x04
-    "Unknown (0x08)",  // 0x08
-    "Unknown (0x10)",  // 0x10
-    "Unknown (0x20)",  // 0x20
-    "Unknown (0x40)",  // 0x40
-    "Unknown (0x80)",  // 0x80
+static const char OP_CHARGING[] PROGMEM = "Charging";
+static const char OP_DISCHARGING[] PROGMEM = "Discharging";
+static const char OP_UNK_04[] PROGMEM = "Unknown (0x04)";
+static const char OP_UNK_08[] PROGMEM = "Unknown (0x08)";
+static const char OP_UNK_10[] PROGMEM = "Unknown (0x10)";
+static const char OP_UNK_20[] PROGMEM = "Unknown (0x20)";
+static const char OP_UNK_40[] PROGMEM = "Unknown (0x40)";
+static const char OP_UNK_80[] PROGMEM = "Unknown (0x80)";
+
+static const char *const OPERATION_STATUS[] PROGMEM = {
+    OP_CHARGING, OP_DISCHARGING, OP_UNK_04, OP_UNK_08,
+    OP_UNK_10, OP_UNK_20, OP_UNK_40, OP_UNK_80
 };
 
-static const uint8_t ROOT_PASSWORD[] = {0x4a, 0x42, 0x44, 0x62, 0x74, 0x70, 0x77, 0x64,
-                                        0x21, 0x40, 0x23, 0x32, 0x30, 0x32, 0x33};
-static const size_t ROOT_PASSWORD_LENGTH = sizeof(ROOT_PASSWORD);
+static const uint8_t ROOT_PASSWORD[] PROGMEM = {
+    0x4a, 0x42, 0x44, 0x62, 0x74, 0x70, 0x77, 0x64,
+    0x21, 0x40, 0x23, 0x32, 0x30, 0x32, 0x33
+};
+static constexpr size_t ROOT_PASSWORD_LENGTH = 15;
 
 void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t gattc_if,
                                     esp_ble_gattc_cb_param_t *param) {
@@ -88,21 +100,31 @@ void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       break;
     }
     case ESP_GATTC_DISCONNECT_EVT: {
-      this->node_state = espbt::ClientState::IDLE;
-
-      if (this->char_notify_handle_ != 0) {
+      ESP_LOGI(TAG, "Disconnect event - cleaning up");
+      
+      // CRITICAL: Save handles before clearing
+      uint16_t notify_handle = this->char_notify_handle_;
+      
+      if (notify_handle != 0) {
         auto status = esp_ble_gattc_unregister_for_notify(this->parent()->get_gattc_if(),
-                                                          this->parent()->get_remote_bda(), this->char_notify_handle_);
+                                                          this->parent()->get_remote_bda(), notify_handle);
         if (status) {
           ESP_LOGW(TAG, "esp_ble_gattc_unregister_for_notify failed, status=%d", status);
         }
       }
+      
+      // CRITICAL: Set state first to prevent race conditions
+      this->node_state = espbt::ClientState::IDLE;
       this->char_notify_handle_ = 0;
       this->char_command_handle_ = 0;
 
-      this->frame_buffer_.clear();
+      // Reset authentication state
       this->authentication_state_ = AuthState::NOT_AUTHENTICATED;
       this->random_byte_ = 0;
+
+      // CRITICAL: Clear buffer LAST
+      this->frame_buffer_.clear();
+      this->frame_buffer_.shrink_to_fit();
 
       break;
     }
@@ -128,6 +150,11 @@ void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
         break;
       }
       this->char_command_handle_ = char_command->handle;
+      
+      // Pre-allocate buffer
+      this->frame_buffer_.clear();
+      this->frame_buffer_.reserve(MAX_RESPONSE_SIZE);
+      
       break;
     }
     case ESP_GATTC_REG_FOR_NOTIFY_EVT: {
@@ -142,7 +169,8 @@ void JbdBmsBle::gattc_event_handler(esp_gattc_cb_event_t event, esp_gatt_if_t ga
       break;
     }
     case ESP_GATTC_NOTIFY_EVT: {
-      if (param->notify.handle != this->char_notify_handle_)
+      // CRITICAL: Check handle validity
+      if (this->char_notify_handle_ == 0 || param->notify.handle != this->char_notify_handle_)
         break;
 
       ESP_LOGV(TAG, "Notification received (handle 0x%02X): %s", param->notify.handle,
@@ -174,7 +202,7 @@ void JbdBmsBle::send_app_key_() {
   frame[3] = 0x06;
   frame[4] = 0x30;
   frame[5] = 0x30;
-  frame[6] = 0x30;  // "000000"
+  frame[6] = 0x30;
   frame[7] = 0x30;
   frame[8] = 0x30;
   frame[9] = 0x30;
@@ -200,8 +228,6 @@ void JbdBmsBle::send_user_password_() {
   ESP_LOGD(TAG, "Sending encrypted user password with random byte: 0x%02X", this->random_byte_);
 
   uint8_t *remote_bda = this->parent()->get_remote_bda();
-
-  // Use configured password or default to "123123" if empty
   std::string password_str = this->password_.empty() ? "123123" : this->password_;
 
   uint8_t frame[11];
@@ -225,13 +251,14 @@ void JbdBmsBle::send_root_password_() {
   uint8_t *remote_bda = this->parent()->get_remote_bda();
   uint8_t encrypted[ROOT_PASSWORD_LENGTH];
 
-  // Encrypt root password using MAC address and random byte
+  // Read root password from PROGMEM and encrypt
   for (size_t i = 0; i < ROOT_PASSWORD_LENGTH; i++) {
-    uint8_t mac_byte = (i < 6) ? remote_bda[i] : 0x00;  // Use 0x00 for bytes beyond MAC length
-    encrypted[i] = ((mac_byte ^ ROOT_PASSWORD[i]) + this->random_byte_) & 255;
+    uint8_t mac_byte = (i < 6) ? remote_bda[i] : 0x00;
+    uint8_t pwd_byte = pgm_read_byte(&ROOT_PASSWORD[i]);
+    encrypted[i] = ((mac_byte ^ pwd_byte) + this->random_byte_) & 255;
   }
 
-  uint8_t frame[20];  // 4 + 15 + 1
+  uint8_t frame[20];
   frame[0] = JBD_AUTH_PKT_START;
   frame[1] = JBD_AUTH_PKT_SECOND;
   frame[2] = JBD_AUTH_SEND_ROOT_PASSWORD;
@@ -247,6 +274,12 @@ void JbdBmsBle::send_root_password_() {
 }
 
 void JbdBmsBle::send_auth_frame_(uint8_t *frame, size_t length) {
+  // CRITICAL: Check connection state before sending
+  if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_command_handle_ == 0) {
+    ESP_LOGW(TAG, "Cannot send auth frame - not connected");
+    return;
+  }
+
   ESP_LOGV(TAG, "Send auth frame (handle 0x%02X): %s", this->char_command_handle_,
            format_hex_pretty(frame, length).c_str());
 
@@ -260,16 +293,23 @@ void JbdBmsBle::send_auth_frame_(uint8_t *frame, size_t length) {
 }
 
 void JbdBmsBle::assemble(const uint8_t *data, uint16_t length) {
+  // CRITICAL: Check connection state
+  if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_notify_handle_ == 0) {
+    ESP_LOGV(TAG, "Ignoring data - not in established state");
+    return;
+  }
+
   if (this->frame_buffer_.size() > MAX_RESPONSE_SIZE) {
     ESP_LOGW(TAG, "Maximum response size exceeded");
     this->frame_buffer_.clear();
+    return;
   }
 
-  // Auth frames (0xFF 0xAA) are complete in single BLE notification, process directly
+  // Auth frames are complete in single notification
   if (length >= 5 && data[0] == JBD_AUTH_PKT_START && data[1] == JBD_AUTH_PKT_SECOND) {
     uint8_t command = data[2];
     uint8_t data_len = data[3];
-    uint8_t expected_frame_len = 4 + data_len + 1;  // FF AA CMD LEN DATA... CHECKSUM
+    uint8_t expected_frame_len = 4 + data_len + 1;
 
     if (length >= expected_frame_len) {
       uint8_t computed_crc = auth_chksum_(data + 2, 2 + data_len);
@@ -326,18 +366,17 @@ void JbdBmsBle::handle_auth_response_(uint8_t command, const uint8_t *data, uint
   switch (command) {
     case JBD_AUTH_SEND_APP_KEY:
       switch (data[0]) {
-        case 0x00:  // App key accepted, password required
+        case 0x00:
           ESP_LOGD(TAG, "App key accepted, password required - requesting random byte");
           this->authentication_state_ = AuthState::REQUESTING_RANDOM;
           this->request_random_byte_();
           break;
-        case 0x02:  // No password set, direct access
+        case 0x02:
           ESP_LOGI(TAG, "App key accepted, no password required - authentication complete");
           this->authentication_state_ = AuthState::AUTHENTICATED;
-          // Start normal data collection immediately
           this->send_command(JBD_CMD_READ, JBD_CMD_HWINFO);
           break;
-        case 0x01:  // App key rejected
+        case 0x01:
           ESP_LOGE(TAG, "App key rejected");
           this->authentication_state_ = AuthState::NOT_AUTHENTICATED;
           break;
@@ -361,7 +400,7 @@ void JbdBmsBle::handle_auth_response_(uint8_t command, const uint8_t *data, uint
       break;
 
     case JBD_AUTH_SEND_PASSWORD:
-      if (data[0] == 0x00) {  // Success
+      if (data[0] == 0x00) {
         ESP_LOGD(TAG, "Password accepted, requesting new random byte for root password");
         this->authentication_state_ = AuthState::REQUESTING_ROOT_RANDOM;
         this->request_random_byte_();
@@ -372,10 +411,9 @@ void JbdBmsBle::handle_auth_response_(uint8_t command, const uint8_t *data, uint
       break;
 
     case JBD_AUTH_SEND_ROOT_PASSWORD:
-      if (data[0] == 0x00) {  // Success
+      if (data[0] == 0x00) {
         ESP_LOGI(TAG, "Authentication successful!");
         this->authentication_state_ = AuthState::AUTHENTICATED;
-        // Start normal data collection
         this->send_command(JBD_CMD_READ, JBD_CMD_HWINFO);
       } else {
         ESP_LOGE(TAG, "Root password rejected");
@@ -464,20 +502,18 @@ void JbdBmsBle::on_cell_info_data_(const std::vector<uint8_t> &data) {
     return;
   }
 
-  // Byte Len  Payload                Content              Coeff.      Unit        Example value
-  // 0     2   0x0F 0x3B              Cell voltage 1       0.001       V           3899 = 3.899
-  // 2     2   0x0F 0x30              Cell voltage 2       0.001       V
-  // 4     2   0x0F 0x2D              Cell voltage 3       0.001       V
-  // 6     2   0x0F 0x31              Cell voltage 4       0.001       V
+  // Single-pass cell processing - OPTIMIZED
   uint8_t cells = std::min(data_len / 2, 32);
   float min_cell_voltage = 100.0f;
-  float max_cell_voltage = -100.0f;
-  float average_cell_voltage = 0.0f;
+  float max_cell_voltage = 0.0f;
+  float sum_voltage = 0.0f;
   uint8_t min_voltage_cell = 0;
   uint8_t max_voltage_cell = 0;
+  
   for (uint8_t i = 0; i < cells; i++) {
     float cell_voltage = (float) jbd_get_16bit(0 + (i * 2)) * 0.001f;
-    average_cell_voltage = average_cell_voltage + cell_voltage;
+    sum_voltage += cell_voltage;
+    
     if (cell_voltage < min_cell_voltage) {
       min_cell_voltage = cell_voltage;
       min_voltage_cell = i + 1;
@@ -486,9 +522,11 @@ void JbdBmsBle::on_cell_info_data_(const std::vector<uint8_t> &data) {
       max_cell_voltage = cell_voltage;
       max_voltage_cell = i + 1;
     }
+    
     this->publish_state_(this->cells_[i].cell_voltage_sensor_, cell_voltage);
   }
-  average_cell_voltage = average_cell_voltage / cells;
+  
+  float average_cell_voltage = (cells > 0) ? (sum_voltage / cells) : 0.0f;
 
   this->publish_state_(this->min_cell_voltage_sensor_, min_cell_voltage);
   this->publish_state_(this->max_cell_voltage_sensor_, max_cell_voltage);
@@ -511,50 +549,35 @@ void JbdBmsBle::on_hardware_info_data_(const std::vector<uint8_t> &data) {
 
   ESP_LOGD(TAG, "  Device model: %s", this->device_model_.c_str());
 
-  // Byte Len  Payload                Content              Coeff.      Unit        Example value
-  //  0    2   0x06 0x17              Total voltage                                1559
   float total_voltage = jbd_get_16bit(0) * 0.01f;
   this->publish_state_(this->total_voltage_sensor_, total_voltage);
 
-  //  2    2   0x00 0x00              Current
   float current = (float) ((int16_t) jbd_get_16bit(2)) * 0.01f;
   float power = total_voltage * current;
   this->publish_state_(this->current_sensor_, current);
   this->publish_state_(this->power_sensor_, power);
-  this->publish_state_(this->charging_power_sensor_, std::max(0.0f, power));               // 500W vs 0W -> 500W
-  this->publish_state_(this->discharging_power_sensor_, std::abs(std::min(0.0f, power)));  // -500W vs 0W -> 500W
+  this->publish_state_(this->charging_power_sensor_, std::max(0.0f, power));
+  this->publish_state_(this->discharging_power_sensor_, std::abs(std::min(0.0f, power)));
 
-  //  4    2   0x01 0xF3              Residual Capacity                            499
   this->publish_state_(this->capacity_remaining_sensor_, (float) jbd_get_16bit(4) * 0.01f);
-
-  //  6    2   0x01 0xF4              Nominal Capacity                             500
   this->publish_state_(this->nominal_capacity_sensor_, (float) jbd_get_16bit(6) * 0.01f);
-
-  //  8    2   0x00 0x00              Cycle Life
   this->publish_state_(this->charging_cycles_sensor_, (float) jbd_get_16bit(8));
 
-  // 10    2   0x2C 0x7C              Production date
   uint16_t production_date = jbd_get_16bit(10);
   ESP_LOGD(TAG, "  Date of manufacture: %d.%d.%d", 2000 + (production_date >> 9), (production_date >> 5) & 0x0f,
            production_date & 0x1f);
 
-  // 12    4   0x00 0x00 0x00 0x00    Balancer Status
   uint32_t balance_status_bitmask = jbd_get_32bit(12);
   this->publish_state_(this->balancer_status_bitmask_sensor_, (float) balance_status_bitmask);
   this->publish_state_(this->balancing_binary_sensor_, balance_status_bitmask > 0);
 
-  // 16    2   0x00 0x00              Protection Status
   uint16_t errors_bitmask = jbd_get_16bit(16);
   this->publish_state_(this->errors_bitmask_sensor_, (float) errors_bitmask);
   this->publish_state_(this->errors_text_sensor_, this->bitmask_to_string_(ERRORS, ERRORS_SIZE, errors_bitmask));
 
-  // 18    1   0x80                   Version                                      0x10 = 1.0, 0x80 = 8.0
   this->publish_state_(this->software_version_sensor_, (data[18] >> 4) + ((data[18] & 0x0f) * 0.1f));
-
-  // 19    1   0x64                   State of charge
   this->publish_state_(this->state_of_charge_sensor_, data[19]);
 
-  // 20    1   0x03                   Mosfet bitmask
   uint8_t operation_status = data[20];
   this->mosfet_status_ = operation_status;
   this->publish_state_(this->operation_status_bitmask_sensor_, operation_status);
@@ -565,13 +588,8 @@ void JbdBmsBle::on_hardware_info_data_(const std::vector<uint8_t> &data) {
   this->publish_state_(this->discharging_binary_sensor_, operation_status & JBD_MOS_DISCHARGE);
   this->publish_state_(this->discharging_switch_, operation_status & JBD_MOS_DISCHARGE);
 
-  // 21    2   0x04                   Cell count
   this->publish_state_(this->battery_strings_sensor_, data[21]);
 
-  // 22    3   0x03                   Temperature sensors
-  // 23    2   0x0B 0x8D              Temperature 1
-  // 25    2   0x0B 0x8C              Temperature 2
-  // 27    2   0x0B 0x88              Temperature 3
   uint8_t temperature_sensors = std::min(data[22], (uint8_t) 6);
   this->publish_state_(this->temperature_sensors_sensor_, temperature_sensors);
   for (uint8_t i = 0; i < temperature_sensors; i++) {
@@ -611,10 +629,6 @@ void JbdBmsBle::on_hardware_version_data_(const std::vector<uint8_t> &data) {
   ESP_LOGI(TAG, "Hardware version frame (%d bytes) received", data.size());
   ESP_LOGVV(TAG, "  %s", format_hex_pretty(&data.front(), data.size()).c_str());
 
-  // Byte Len  Payload                                              Content
-  // 0    25   0x4A 0x42 0x44 0x2D 0x53 0x50 0x30 0x34 0x53 0x30
-  //           0x33 0x34 0x2D 0x4C 0x34 0x53 0x2D 0x32 0x30 0x30
-  //           0x41 0x2D 0x42 0x2D 0x55
   this->device_model_ = std::string(data.begin(), data.end());
 
   ESP_LOGI(TAG, "  Model name: %s", this->device_model_.c_str());
@@ -800,6 +814,12 @@ bool JbdBmsBle::change_mosfet_status(uint8_t address, uint8_t bitmask, bool stat
 }
 
 bool JbdBmsBle::write_register(uint8_t address, uint16_t value) {
+  // CRITICAL: Check connection state before sending
+  if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_command_handle_ == 0) {
+    ESP_LOGW(TAG, "Cannot write register - not connected");
+    return false;
+  }
+
   uint8_t frame[9];
   uint8_t data_len = 2;
 
@@ -828,6 +848,12 @@ bool JbdBmsBle::write_register(uint8_t address, uint16_t value) {
 }
 
 bool JbdBmsBle::send_command(uint8_t action, uint8_t function) {
+  // CRITICAL: Check connection state before sending
+  if (this->node_state != espbt::ClientState::ESTABLISHED || this->char_command_handle_ == 0) {
+    ESP_LOGW(TAG, "Cannot send command - not connected");
+    return false;
+  }
+
   uint8_t frame[7];
   uint8_t data_len = 0;
 
@@ -859,7 +885,7 @@ std::string JbdBmsBle::bitmask_to_string_(const char *const messages[], const ui
   if (mask) {
     for (int i = 0; i < messages_size; i++) {
       if (mask & (1 << i)) {
-        values.append(messages[i]);
+        values.append(FPSTR((char*)pgm_read_ptr(&messages[i])));
         values.append(";");
       }
     }
